@@ -18,6 +18,23 @@ def test_link_shared_auth(tmp_path) -> None:
     assert linked.resolve() == auth_file
 
 
+def test_trust_project_adds_runtime_trust_once(tmp_path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    runtime_dir = tmp_path / "runtime" / "agent"
+    (runtime_dir / ".codex").mkdir(parents=True)
+    config_path = runtime_dir / ".codex" / "config.toml"
+    config_path.write_text("[features]\ngoals = true\n", encoding="utf-8")
+    manager = TmuxManager(Path("/home/solution2024/agent-room"), tmp_path, auth_file)
+
+    manager._trust_project(runtime_dir)
+    manager._trust_project(runtime_dir)
+
+    text = config_path.read_text(encoding="utf-8")
+    assert text.count('[projects."/home/solution2024/agent-room"]') == 1
+    assert 'trust_level = "trusted"' in text
+
+
 def test_controller_command_enables_network_and_workspace_write(tmp_path) -> None:
     auth_file = tmp_path / "auth.json"
     auth_file.write_text("{}", encoding="utf-8")

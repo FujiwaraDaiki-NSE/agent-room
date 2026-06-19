@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import shutil
@@ -52,6 +53,7 @@ class TmuxManager:
         if runtime_dir.exists():
             raise TmuxError(f"runtime directory already exists: {runtime_dir}")
         shutil.copytree(template_dir, runtime_dir)
+        self._trust_project(runtime_dir)
         self._link_shared_auth(runtime_dir)
         prompt_path = runtime_dir / "room-goal.md"
         prompt_path.write_text(
@@ -222,6 +224,19 @@ class TmuxManager:
         if target.exists() or target.is_symlink():
             raise TmuxError(f"runtime auth file already exists: {target}")
         target.symlink_to(self.codex_auth_file)
+
+    def _trust_project(self, runtime_dir: Path) -> None:
+        config_path = runtime_dir / ".codex" / "config.toml"
+        if not config_path.is_file():
+            raise TmuxError(f"runtime config file not found: {config_path}")
+        text = config_path.read_text(encoding="utf-8")
+        project_table = f"[projects.{json.dumps(str(self.project_root))}]"
+        if project_table in text:
+            return
+        config_path.write_text(
+            text.rstrip() + f"\n\n{project_table}\ntrust_level = \"trusted\"\n",
+            encoding="utf-8",
+        )
 
     def _split_pane(self, command: str) -> str:
         target = os.environ["TMUX_PANE"]
