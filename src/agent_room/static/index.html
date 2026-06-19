@@ -1,18 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Agent Room</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260619-discussion-protocol" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260619-control-room" />
   </head>
   <body>
     <main class="shell">
       <header class="masthead">
         <section class="topbar">
-          <div>
+          <div class="brandBlock">
             <h1>Agent Room</h1>
             <p id="tmuxHelp">tmux</p>
+          </div>
+          <div class="statusCluster" aria-label="Room status">
+            <span id="roomStatusPill" class="statusPill">Draft</span>
+            <span id="agentCountPill" class="statusPill">Agents 0</span>
+            <span id="socketStatusPill" class="statusPill">Socket off</span>
           </div>
           <div class="actions">
             <button id="refresh">Refresh</button>
@@ -35,72 +40,106 @@
             <strong id="briefAgentTermination">Draft</strong>
           </div>
         </section>
+        <div id="statusLine" class="statusLine" aria-live="polite"></div>
       </header>
 
       <section class="workspace">
         <section class="stage">
-          <div class="roomForm">
-            <label>
+          <aside class="controlRail">
+            <section class="controlPanel">
+              <div class="sectionHead">
+                <h2>Setup</h2>
+                <span id="setupState">Draft</span>
+              </div>
+              <label class="field">
               Goal
-              <textarea id="goal" rows="3"></textarea>
-            </label>
-            <label>
+                <textarea id="goal" rows="4"></textarea>
+              </label>
+              <label class="field">
               Controller Termination
-              <textarea id="controllerTermination" rows="2"></textarea>
-            </label>
-            <label>
+                <textarea id="controllerTermination" rows="3"></textarea>
+              </label>
+              <label class="field">
               Agent Termination
-              <textarea id="agentTermination" rows="2"></textarea>
-            </label>
-            <div>
-              <h2>Templates</h2>
-              <div id="templateList" class="templateList"></div>
-            </div>
-            <button id="startRoom" class="primary">Start</button>
-          </div>
+                <textarea id="agentTermination" rows="3"></textarea>
+              </label>
+              <div>
+                <div class="sectionHead">
+                  <h2>Templates</h2>
+                  <span id="templateCount">0</span>
+                </div>
+                <div id="templateList" class="templateList"></div>
+              </div>
+              <button id="startRoom" class="primary">Start</button>
+            </section>
 
-          <div class="tableWrap">
-            <div class="roundTable">
-              <div class="tableCore">
+            <section class="rosterPanel">
+              <div class="sectionHead">
+                <h2>Agents</h2>
+                <span id="activeAgentCount">0 active</span>
+              </div>
+              <div id="agentRoster" class="agentRoster"></div>
+            </section>
+          </aside>
+
+          <section class="roomDeck">
+            <div class="roomToolbar">
+              <div>
+                <h2>Room</h2>
                 <span id="roomState">Idle</span>
               </div>
-              <div id="agentLayer"></div>
+              <div class="deployBar">
+                <label class="srOnly" for="deployTemplate">Deploy agent</label>
+                <select id="deployTemplate"></select>
+                <button id="deployAgent">Deploy</button>
+              </div>
             </div>
-          </div>
 
-          <div class="deployBar">
-            <select id="deployTemplate"></select>
-            <button id="deployAgent">Deploy</button>
-          </div>
+            <div class="tableWrap">
+              <div class="roundTable">
+                <div class="tableCore">
+                  <span id="tableState">Idle</span>
+                </div>
+                <div id="agentLayer"></div>
+              </div>
+            </div>
+          </section>
         </section>
 
         <aside class="sidebar">
-          <section class="chatPanel">
+          <div class="railTabs" role="tablist" aria-label="Chats">
+            <button id="messagesTab" class="active" type="button" role="tab" aria-selected="true" aria-controls="messagesPanel">Messages</button>
+            <button id="controllerTab" type="button" role="tab" aria-selected="false" aria-controls="controllerPanel">Controller</button>
+          </div>
+
+          <section id="messagesPanel" class="chatPanel active" role="tabpanel" aria-labelledby="messagesTab">
             <div class="sidebarHead">
-              <h2>Messages</h2>
+              <h2>Activity</h2>
               <span id="activeRoom">No room</span>
             </div>
-            <div id="messages" class="messages"></div>
+            <div id="messages" class="messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Public messages" tabindex="0"></div>
             <div class="composer">
-              <input id="messageText" placeholder="Message" />
-              <button id="sendMessage">Send</button>
+              <label class="srOnly" for="messageText">Message</label>
+              <textarea id="messageText" rows="2" placeholder="Message"></textarea>
+              <button id="sendMessage" aria-label="Send public message">Send</button>
             </div>
           </section>
 
-          <section class="chatPanel">
+          <section id="controllerPanel" class="chatPanel" role="tabpanel" aria-labelledby="controllerTab" hidden>
             <div class="sidebarHead">
               <h2>Controller</h2>
               <span>Private</span>
             </div>
-            <div id="controllerMessages" class="messages"></div>
+            <div id="controllerMessages" class="messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Controller private messages" tabindex="0"></div>
             <div class="composer">
-              <input id="controllerText" placeholder="Whisper" />
-              <button id="sendControllerMessage">Send</button>
+              <label class="srOnly" for="controllerText">Whisper</label>
+              <textarea id="controllerText" rows="2" placeholder="Whisper"></textarea>
+              <button id="sendControllerMessage" aria-label="Send controller whisper">Send</button>
             </div>
           </section>
         </aside>
       </section>
     </main>
-    <script src="/static/app.js?v=20260619-discussion-protocol"></script>
+    <script src="/static/app.js?v=20260619-control-room"></script>
   </body>
 </html>

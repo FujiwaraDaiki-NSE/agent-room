@@ -2,6 +2,7 @@
   <rect width="128" height="128" rx="64" fill="#fff6e6"/>
   <circle cx="64" cy="56" r="33" fill="#9a6b1d"/>
   <path d="M32 98c10-25 54-25 64 0" fill="#d49b38"/>
-  <path d="M42 72l34-34 12 12-34 34H42z" fill="#fff"/>
-  <path d="M74 36l8-8 18 18-8 8z" fill="#2f3a45"/>
+  <path d="M37 78l38-38 14 14-38 38H37z" fill="#fff"/>
+  <path d="M75 36l9-9 20 20-9 9z" fill="#2f3a45"/>
+  <path d="M39 91h32" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
 </svg>

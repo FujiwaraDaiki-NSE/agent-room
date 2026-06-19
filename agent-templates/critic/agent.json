@@ -4,7 +4,7 @@
   "shortName": "Critic",
   "role": "review",
   "personality": "厳格な反証役。弱い前提、抜け道、都合のよい解釈をしつこく疑う。",
-  "accent": "#D94841",
+  "accent": "#C93636",
   "avatar": "avatar.svg",
   "summary": "Challenges proposals, checks risks, and looks for missing tests or edge cases.",
   "launch": true,

@@ -1,10 +1,15 @@
 const state = {
   templates: [],
+  tmux: null,
   room: null,
   messages: [],
   controllerMessages: [],
   ws: null,
+  activeChat: "messages",
+  pendingAction: "",
+  status: { text: "", error: false },
   bubbles: new Map(),
+  bubbleTimers: new Map(),
 };
 
 const TERMINATION_TEMPLATE = {
@@ -13,6 +18,8 @@ const TERMINATION_TEMPLATE = {
   agent:
     "controllerが終了と判断するまでdoneしない。各agentは最低1回、反論・留保・代替仮説・追加調査観点のいずれかを提示してから終了可能とする。",
 };
+
+const KNOWN_AGENT_STATES = new Set(["starting", "active", "idle", "speaking", "done", "stopped", "failed"]);
 
 const $ = (id) => document.getElementById(id);
 
@@ -23,36 +30,54 @@ async function api(path, options = {}) {
   });
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(body);
+    throw new Error(errorMessage(body));
   }
   return response.json();
 }
 
 async function boot() {
-  $("refresh").addEventListener("click", refresh);
-  $("newRoom").addEventListener("click", resetRoom);
-  $("startRoom").addEventListener("click", startRoom);
+  $("refresh").addEventListener("click", () => runAction("Refresh", refresh));
+  $("newRoom").addEventListener("click", () => runAction("New", resetRoom));
+  $("startRoom").addEventListener("click", () => runAction("Start", startRoom));
   $("sendMessage").addEventListener("click", sendMessage);
   $("sendControllerMessage").addEventListener("click", sendControllerMessage);
-  $("deployAgent").addEventListener("click", deployAgent);
-  $("closeRoom").addEventListener("click", closeRoom);
-  $("messageText").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") sendMessage();
-  });
-  $("controllerText").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") sendControllerMessage();
-  });
-  await refresh();
+  $("deployAgent").addEventListener("click", () => runAction("Deploy", deployAgent));
+  $("closeRoom").addEventListener("click", () => runAction("Close", closeRoom));
+  $("messagesTab").addEventListener("click", () => setActiveChat("messages"));
+  $("controllerTab").addEventListener("click", () => setActiveChat("controller"));
+  $("goal").addEventListener("input", renderControls);
+  $("controllerTermination").addEventListener("input", renderControls);
+  $("agentTermination").addEventListener("input", renderControls);
+  $("messageText").addEventListener("keydown", (event) => handleComposerKey(event, sendMessage));
+  $("controllerText").addEventListener("keydown", (event) => handleComposerKey(event, sendControllerMessage));
+  $("messageText").addEventListener("input", growComposer);
+  $("controllerText").addEventListener("input", growComposer);
+  await runAction("Refresh", refresh);
+}
+
+async function runAction(label, task) {
+  if (state.pendingAction) return;
+  state.pendingAction = label;
+  setStatus(`${label}...`, false);
+  renderControls();
+  try {
+    await task();
+    setStatus(`${label} done`, false);
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    state.pendingAction = "";
+    renderControls();
+  }
 }
 
 async function refresh() {
   const [templates, tmux] = await Promise.all([api("/api/templates"), api("/api/tmux")]);
   state.templates = templates;
+  state.tmux = tmux;
   renderTemplates();
   renderDeploy();
-  $("tmuxHelp").textContent = tmux.inside_tmux
-    ? `${tmux.attach_command} | window: ${tmux.window}`
-    : "start inside tmux";
+  renderTmux();
   const rooms = await api("/api/rooms");
   const room = rooms[0];
   if (room) {
@@ -64,6 +89,7 @@ async function refresh() {
 }
 
 async function resetRoom() {
+  if (state.room && (state.room.agents.length || state.messages.length) && !confirm("New room?")) return;
   state.room = await api("/api/rooms/reset", {
     method: "POST",
     body: JSON.stringify({
@@ -74,7 +100,7 @@ async function resetRoom() {
   });
   state.messages = [];
   state.controllerMessages = [];
-  state.bubbles.clear();
+  clearBubbles();
   $("goal").value = "";
   setTerminationTemplate();
   connectRoom();
@@ -110,14 +136,14 @@ async function loadRoom() {
 }
 
 function syncRoomForm() {
-  if (!state.room || state.room.state !== "draft") return;
+  if (!state.room) return;
   $("goal").value = state.room.goal;
   if (state.room.controller_termination || state.room.agent_termination) {
     $("controllerTermination").value = state.room.controller_termination;
     $("agentTermination").value = state.room.agent_termination;
     return;
   }
-  setTerminationTemplate();
+  if (state.room.state === "draft") setTerminationTemplate();
 }
 
 function setTerminationTemplate() {
@@ -126,13 +152,19 @@ function setTerminationTemplate() {
 }
 
 function requireStartInputs() {
-  const missing = [];
-  if (!state.room) missing.push("Room state");
-  if (!$("goal").value.trim()) missing.push("Goal");
-  if (!$("controllerTermination").value.trim()) missing.push("Controller Termination");
-  if (!$("agentTermination").value.trim()) missing.push("Agent Termination");
-  if (missing.length > 0) {
-    alert(`${missing.join(", ")} required`);
+  if (!state.room) {
+    setStatus("Room state required", true);
+    return false;
+  }
+  const fields = [
+    ["Goal", $("goal")],
+    ["Controller Termination", $("controllerTermination")],
+    ["Agent Termination", $("agentTermination")],
+  ];
+  const missing = fields.find(([, field]) => !field.value.trim());
+  if (missing) {
+    setStatus(`${missing[0]} required`, true);
+    missing[1].focus();
     return false;
   }
   return true;
@@ -142,6 +174,8 @@ function connectRoom() {
   if (state.ws) state.ws.close();
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   state.ws = new WebSocket(`${protocol}://${location.host}/ws/rooms/${state.room.id}`);
+  state.ws.onopen = renderControls;
+  state.ws.onclose = renderControls;
   state.ws.onmessage = async (event) => {
     const payload = JSON.parse(event.data);
     if (payload.message) {
@@ -155,6 +189,7 @@ function connectRoom() {
       state.room = payload.room;
       state.messages = [];
       state.controllerMessages = [];
+      clearBubbles();
       connectRoom();
       await loadRoom();
       return;
@@ -165,41 +200,60 @@ function connectRoom() {
 }
 
 async function sendMessage() {
-  if (!state.room) return;
+  if (!state.room) {
+    setStatus("Room required", true);
+    return;
+  }
   const text = $("messageText").value;
   if (!text.trim()) return;
   $("messageText").value = "";
-  await api(`/api/rooms/${state.room.id}/messages`, {
-    method: "POST",
-    body: JSON.stringify({
-      actor_type: "user",
-      actor_id: "user",
-      actor_name: "User",
-      text,
-      kind: "message",
-    }),
-  });
+  growComposer({ target: $("messageText") });
+  try {
+    await api(`/api/rooms/${state.room.id}/messages`, {
+      method: "POST",
+      body: JSON.stringify({
+        actor_type: "user",
+        actor_id: "user",
+        actor_name: "User",
+        text,
+        kind: "message",
+      }),
+    });
+  } catch (error) {
+    setStatus(error.message, true);
+  }
 }
 
 async function sendControllerMessage() {
-  if (!state.room) return;
+  if (!state.room) {
+    setStatus("Room required", true);
+    return;
+  }
   const text = $("controllerText").value;
   if (!text.trim()) return;
   $("controllerText").value = "";
-  await api(`/api/rooms/${state.room.id}/controller/messages`, {
-    method: "POST",
-    body: JSON.stringify({
-      actor_type: "user",
-      actor_id: "user",
-      actor_name: "User",
-      text,
-      kind: "message",
-    }),
-  });
+  growComposer({ target: $("controllerText") });
+  try {
+    await api(`/api/rooms/${state.room.id}/controller/messages`, {
+      method: "POST",
+      body: JSON.stringify({
+        actor_type: "user",
+        actor_id: "user",
+        actor_name: "User",
+        text,
+        kind: "message",
+      }),
+    });
+  } catch (error) {
+    setStatus(error.message, true);
+  }
 }
 
 async function deployAgent() {
-  if (!state.room) return;
+  if (!state.room || state.room.state !== "open") {
+    setStatus("Open room required", true);
+    return;
+  }
   await api(`/api/rooms/${state.room.id}/agents`, {
     method: "POST",
     body: JSON.stringify({
@@ -211,7 +265,11 @@ async function deployAgent() {
 }
 
 async function closeRoom() {
-  if (!state.room) return;
+  if (!state.room || state.room.state !== "open") {
+    setStatus("Open room required", true);
+    return;
+  }
+  if (hasActiveAgents() && !confirm("Close room?")) return;
   await api(`/api/rooms/${state.room.id}/stop`, {
     method: "POST",
     body: JSON.stringify({
@@ -224,17 +282,18 @@ async function closeRoom() {
 }
 
 function renderTemplates() {
+  $("templateCount").textContent = `${state.templates.filter((template) => template.launch).length}`;
   $("templateList").innerHTML = state.templates
     .filter((template) => template.launch)
     .map(
       (template) => `
-        <label class="templateCard" style="--accent:${template.accent}">
-          <img src="${template.avatarUrl}" alt="" />
+        <label class="templateCard" style="--accent:${safeColor(template.accent)}">
+          <img src="${escapeHtml(template.avatarUrl)}" alt="" />
           <span>
             <strong>${escapeHtml(template.name)}</strong>
             <span>${escapeHtml(template.personality)}</span>
           </span>
-          <input data-template-check type="checkbox" value="${template.id}" ${template.scope === "controller" ? "checked disabled" : ""} />
+          <input data-template-check type="checkbox" value="${escapeHtml(template.id)}" ${template.scope === "controller" ? "checked disabled" : ""} />
         </label>
       `,
     )
@@ -242,20 +301,24 @@ function renderTemplates() {
 }
 
 function renderDeploy() {
-  $("deployTemplate").innerHTML = state.templates
-    .filter((template) => template.launch)
-    .map((template) => `<option value="${template.id}">${escapeHtml(template.name)}</option>`)
+  const options = state.templates.filter((template) => template.launch && template.scope !== "controller");
+  $("deployTemplate").innerHTML = options
+    .map((template) => `<option value="${escapeHtml(template.id)}">${escapeHtml(template.name)}</option>`)
     .join("");
 }
 
 function renderRoom() {
   const room = state.room;
-  $("activeRoom").textContent = room ? room.name : "No room";
-  $("roomState").textContent = room ? room.state : "Idle";
+  $("activeRoom").textContent = room ? `${room.state} · ${state.messages.length}` : "No room";
+  $("roomState").textContent = room ? stateLabel(room.state) : "Idle";
+  $("tableState").textContent = room ? stateLabel(room.state) : "Idle";
+  $("setupState").textContent = room ? stateLabel(room.state) : "Draft";
   renderBrief(room);
   renderAgents(room ? room.agents : []);
-  renderMessages();
-  renderControllerMessages();
+  renderRoster(room ? room.agents : []);
+  renderMessageList("messages", state.messages, "No messages", false);
+  renderMessageList("controllerMessages", state.controllerMessages, "No whispers", true);
+  renderControls();
 }
 
 function renderBrief(room) {
@@ -265,13 +328,69 @@ function renderBrief(room) {
   $("briefAgentTermination").textContent = room && room.agent_termination ? room.agent_termination : "Draft";
 }
 
+function renderControls() {
+  const room = state.room;
+  document.body.dataset.roomState = room ? room.state : "none";
+  const isDraft = room && room.state === "draft";
+  const isOpen = room && room.state === "open";
+  const hasRequiredInput = Boolean(
+    room && $("goal").value.trim() && $("controllerTermination").value.trim() && $("agentTermination").value.trim(),
+  );
+  const pending = Boolean(state.pendingAction);
+  $("startRoom").disabled = !isDraft || !hasRequiredInput || pending;
+  $("deployAgent").disabled = !isOpen || pending || !state.tmux || !state.tmux.inside_tmux || !$("deployTemplate").value;
+  $("closeRoom").disabled = !isOpen || pending;
+  $("newRoom").disabled = pending;
+  $("refresh").disabled = pending;
+  $("sendMessage").disabled = !room || pending;
+  $("sendControllerMessage").disabled = !room || pending;
+  $("goal").disabled = !isDraft || pending;
+  $("controllerTermination").disabled = !isDraft || pending;
+  $("agentTermination").disabled = !isDraft || pending;
+  $("deployTemplate").disabled = !isOpen || pending;
+  document.querySelectorAll("[data-template-check]").forEach((input) => {
+    const isController = input.value === "controller";
+    input.disabled = isController || !isDraft || pending;
+  });
+  $("startRoom").textContent = state.pendingAction === "Start" ? "Starting" : "Start";
+  $("deployAgent").textContent = state.pendingAction === "Deploy" ? "Deploying" : "Deploy";
+  $("closeRoom").textContent = state.pendingAction === "Close" ? "Closing" : "Close";
+  $("newRoom").textContent = state.pendingAction === "New" ? "Creating" : "New";
+  renderStatus();
+  renderPills();
+}
+
+function renderPills() {
+  const room = state.room;
+  const agents = room ? room.agents : [];
+  const activeCount = agents.filter((agent) => ["starting", "active", "speaking", "idle"].includes(agent.state)).length;
+  const doneCount = agents.filter((agent) => agent.state === "done").length;
+  $("roomStatusPill").textContent = room ? stateLabel(room.state) : "No room";
+  $("agentCountPill").textContent = `Agents ${agents.length} / Active ${activeCount} / Done ${doneCount}`;
+  $("activeAgentCount").textContent = `${activeCount} active`;
+  $("socketStatusPill").textContent = socketLabel();
+}
+
+function renderTmux() {
+  $("tmuxHelp").textContent = state.tmux && state.tmux.inside_tmux
+    ? `${state.tmux.attach_command} | window: ${state.tmux.window}`
+    : "start inside tmux";
+}
+
+function renderStatus() {
+  const status = $("statusLine");
+  status.textContent = state.status.text;
+  status.classList.toggle("error", state.status.error);
+  status.classList.toggle("empty", !state.status.text);
+}
+
 function renderAgents(agents) {
   const layer = $("agentLayer");
   if (!agents.length) {
-    layer.innerHTML = "";
+    layer.innerHTML = `<div class="emptySeat">No agents</div>`;
     return;
   }
-  const radius = 43;
+  const radius = agents.length > 8 ? 39 : 42;
   layer.innerHTML = agents
     .map((agent, index) => {
       const angle = -90 + (360 / agents.length) * index;
@@ -279,66 +398,164 @@ function renderAgents(agents) {
       const x = 50 + Math.cos(rad) * radius;
       const y = 50 + Math.sin(rad) * radius;
       const bubble = state.bubbles.get(agent.id);
+      const agentState = agentStateClass(agent.state);
+      const bubbleClass = y > 58 ? "bubbleUp" : x < 35 ? "bubbleRight" : x > 65 ? "bubbleLeft" : "bubbleDown";
+      const label = seatLabel(agent, agents);
       return `
-        <div class="seat ${agent.state}" style="left:${x}%;top:${y}%;--accent:${agent.accent}">
-          <div class="avatar"><img src="${agent.avatar_url}" alt="" /></div>
-          <div class="seatName">${escapeHtml(agent.short_name)}</div>
-          ${bubble ? `<div class="bubble">${escapeHtml(bubble)}</div>` : ""}
+        <div class="seat state-${agentState} ${agents.length > 8 ? "compactSeat" : ""} ${bubbleClass}"
+          style="--seat-x:${x}%;--seat-y:${y}%;--accent:${safeColor(agent.accent)}"
+          aria-label="${escapeHtml(`${agent.name} ${agent.state}`)}">
+          <div class="avatar">
+            <img src="${escapeHtml(agent.avatar_url)}" alt="${escapeHtml(agent.name)}" />
+            <span class="stateDot" aria-hidden="true"></span>
+          </div>
+          <div class="seatName">${escapeHtml(label)}</div>
+          <div class="seatRole">${escapeHtml(agent.role)}</div>
+          ${bubble ? `<div class="bubble">${escapeHtml(previewText(bubble.text, 180))}</div>` : ""}
         </div>
       `;
     })
     .join("");
 }
 
-function renderMessages() {
-  const messages = $("messages");
-  messages.innerHTML = state.messages
+function renderRoster(agents) {
+  const roster = $("agentRoster");
+  if (!agents.length) {
+    roster.innerHTML = `<div class="emptyState">No agents</div>`;
+    return;
+  }
+  roster.innerHTML = agents
     .map(
-      (message) => `
-        <article class="message ${messageClass(message)}">
-          ${messageAvatar(message)}
-          <div class="messageBody">
-            <div class="messageMeta">
-              <strong>${escapeHtml(message.actor_name)}</strong>
-              <span>#${message.id}</span>
-            </div>
-            <div class="messageText">${escapeHtml(message.text)}</div>
+      (agent) => `
+        <article class="rosterItem state-${agentStateClass(agent.state)}" style="--accent:${safeColor(agent.accent)}">
+          <img src="${escapeHtml(agent.avatar_url)}" alt="" />
+          <div>
+            <strong>${escapeHtml(agent.name)}</strong>
+            <span>${escapeHtml(agent.role)}</span>
+            <small>${escapeHtml(agent.pane_id || agent.id)}</small>
           </div>
+          <span class="stateBadge">${escapeHtml(stateLabel(agent.state))}</span>
         </article>
       `,
     )
     .join("");
-  messages.scrollTop = messages.scrollHeight;
 }
 
-function renderControllerMessages() {
-  const messages = $("controllerMessages");
-  messages.innerHTML = state.controllerMessages
-    .map(
-      (message) => `
-        <article class="message privateMessage ${messageClass(message)}">
-          ${messageAvatar(message)}
-          <div class="messageBody">
-            <div class="messageMeta">
-              <strong>${escapeHtml(message.actor_name)}</strong>
-              <span>#${message.id}</span>
-            </div>
-            <div class="messageText">${escapeHtml(message.text)}</div>
-          </div>
-        </article>
-      `,
-    )
-    .join("");
-  messages.scrollTop = messages.scrollHeight;
+function renderMessageList(targetId, items, emptyText, isPrivate) {
+  const messages = $(targetId);
+  const shouldScroll = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 80;
+  if (!items.length) {
+    messages.innerHTML = `<div class="emptyState">${emptyText}</div>`;
+    return;
+  }
+  const agents = agentMap();
+  messages.innerHTML = items.map((message) => messageArticle(message, agents, isPrivate)).join("");
+  if (shouldScroll) scrollToLatest(messages);
+}
+
+function messageArticle(message, agents, isPrivate) {
+  const agent = agents.get(message.actor_id);
+  const accent = safeColor(agent ? agent.accent : actorAccent(message.actor_type));
+  const tag = message.kind && message.kind !== "message" ? message.kind : message.actor_type;
+  return `
+    <article class="message ${messageClass(message)} ${isPrivate ? "privateMessage" : ""}" style="--accent:${accent}">
+      ${messageAvatar(message, agent, accent)}
+      <div class="messageBody">
+        <div class="messageMeta">
+          <strong>${escapeHtml(message.actor_name)}</strong>
+          <span><time datetime="${escapeHtml(message.created_at)}">${escapeHtml(formatTime(message.created_at))}</time> · #${message.id}</span>
+        </div>
+        <div class="messageTag">${escapeHtml(tag)}</div>
+        <div class="messageText">${escapeHtml(message.text)}</div>
+      </div>
+    </article>
+  `;
+}
+
+function messageAvatar(message, agent, accent) {
+  if (agent && agent.avatar_url) {
+    return `
+      <div class="messageAvatar" style="--accent:${accent}">
+        <img src="${escapeHtml(agent.avatar_url)}" alt="" />
+      </div>
+    `;
+  }
+  return `<div class="messageAvatar initialsAvatar" style="--accent:${accent}">${escapeHtml(initials(message.actor_name))}</div>`;
 }
 
 function showBubble(message) {
   if (message.actor_type === "system") return;
-  state.bubbles.set(message.actor_id, message.text);
-  setTimeout(() => {
-    state.bubbles.delete(message.actor_id);
-    renderRoom();
+  const previous = state.bubbleTimers.get(message.actor_id);
+  if (previous) clearTimeout(previous);
+  state.bubbles.set(message.actor_id, { id: message.id, text: message.text });
+  const timer = setTimeout(() => {
+    const current = state.bubbles.get(message.actor_id);
+    if (current && current.id === message.id) state.bubbles.delete(message.actor_id);
+    renderAgents(state.room ? state.room.agents : []);
   }, 7000);
+  state.bubbleTimers.set(message.actor_id, timer);
+}
+
+function clearBubbles() {
+  state.bubbleTimers.forEach((timer) => clearTimeout(timer));
+  state.bubbleTimers.clear();
+  state.bubbles.clear();
+}
+
+function setActiveChat(chat) {
+  state.activeChat = chat;
+  const messagesActive = chat === "messages";
+  $("messagesPanel").hidden = !messagesActive;
+  $("controllerPanel").hidden = messagesActive;
+  $("messagesPanel").classList.toggle("active", messagesActive);
+  $("controllerPanel").classList.toggle("active", !messagesActive);
+  $("messagesTab").classList.toggle("active", messagesActive);
+  $("controllerTab").classList.toggle("active", !messagesActive);
+  $("messagesTab").setAttribute("aria-selected", messagesActive ? "true" : "false");
+  $("controllerTab").setAttribute("aria-selected", messagesActive ? "false" : "true");
+}
+
+function handleComposerKey(event, submit) {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    submit();
+  }
+}
+
+function growComposer(event) {
+  const field = event.target;
+  field.style.height = "auto";
+  field.style.height = `${Math.min(field.scrollHeight, 160)}px`;
+}
+
+function scrollToLatest(messages) {
+  const latest = messages.lastElementChild;
+  if (!latest) return;
+  if (latest.clientHeight > messages.clientHeight * 0.72) {
+    messages.scrollTop = latest.offsetTop - messages.offsetTop - 10;
+    return;
+  }
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function setStatus(text, error) {
+  state.status = { text, error };
+  renderStatus();
+}
+
+function hasActiveAgents() {
+  if (!state.room) return false;
+  return state.room.agents.some((agent) => ["starting", "active", "speaking", "idle"].includes(agent.state));
+}
+
+function agentMap() {
+  return new Map((state.room ? state.room.agents : []).map((agent) => [agent.id, agent]));
+}
+
+function seatLabel(agent, agents) {
+  const duplicates = agents.filter((item) => item.template_id === agent.template_id);
+  if (duplicates.length < 2) return agent.short_name;
+  return `${agent.short_name} ${agent.id.slice(-3)}`;
 }
 
 function messageClass(message) {
@@ -348,24 +565,27 @@ function messageClass(message) {
   return "agentMessage";
 }
 
-function messageAvatar(message) {
-  const agent = state.room ? state.room.agents.find((item) => item.id === message.actor_id) : null;
-  const accent = safeColor(agent ? agent.accent : actorAccent(message.actor_type));
-  if (agent && agent.avatar_url) {
-    return `
-      <div class="messageAvatar" style="--accent:${accent}">
-        <img src="${escapeHtml(agent.avatar_url)}" alt="" />
-      </div>
-    `;
-  }
-  return `<div class="messageAvatar" style="--accent:${accent}">${escapeHtml(initials(message.actor_name))}</div>`;
-}
-
 function actorAccent(actorType) {
   if (actorType === "user") return "#136F63";
   if (actorType === "controller") return "#254D70";
   if (actorType === "system") return "#607080";
   return "#48515A";
+}
+
+function stateLabel(value) {
+  return String(value).replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function agentStateClass(value) {
+  const normalized = String(value);
+  return KNOWN_AGENT_STATES.has(normalized) ? normalized : "idle";
+}
+
+function socketLabel() {
+  if (!state.ws) return "Socket off";
+  if (state.ws.readyState === WebSocket.OPEN) return "Socket on";
+  if (state.ws.readyState === WebSocket.CONNECTING) return "Socket connecting";
+  return "Socket off";
 }
 
 function initials(name) {
@@ -378,8 +598,29 @@ function initials(name) {
     .toUpperCase();
 }
 
+function previewText(value, limit) {
+  const text = String(value);
+  return text.length > limit ? `${text.slice(0, limit)}...` : text;
+}
+
+function formatTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 function safeColor(value) {
   return /^#[0-9a-fA-F]{6}$/.test(String(value)) ? value : "#607080";
+}
+
+function errorMessage(body) {
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed.detail === "string") return parsed.detail;
+  } catch {
+    return body;
+  }
+  return body;
 }
 
 function escapeHtml(value) {
@@ -392,5 +633,5 @@ function escapeHtml(value) {
 }
 
 boot().catch((error) => {
-  alert(error.message);
+  setStatus(error.message, true);
 });

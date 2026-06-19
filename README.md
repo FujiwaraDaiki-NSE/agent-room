@@ -100,8 +100,9 @@ This keeps personality and agent config isolated without forcing each pane to lo
 The app keeps only one current room. Use `New` to clear the public log and controller private log by replacing the room.
 The room name is internal and hidden in the GUI.
 After `Start`, the top brief keeps `Goal`, `Controller Termination`, and `Agent Termination` visible.
+The live room shows a status strip, participant roster, round table, and activity rail.
 
-The `Controller` panel is private. Use it for instructions or whispers that should go only to the controller.
+The `Controller` tab is private. Use it for instructions or whispers that should go only to the controller.
 
 ## Agent MCP Tools
 
