@@ -68,7 +68,7 @@ async function resetRoom() {
   state.messages = [];
   state.controllerMessages = [];
   state.bubbles.clear();
-  $("roomName").value = "";
+  $("roomName").value = state.room.name;
   $("goal").value = "";
   $("termination").value = "";
   connectRoom();
@@ -77,10 +77,12 @@ async function resetRoom() {
 
 async function startRoom() {
   const selected = [...document.querySelectorAll("[data-template-check]:checked")].map((input) => input.value);
+  if (!selected.includes("controller")) selected.unshift("controller");
+  if (!requireStartInputs()) return;
   const payload = {
-    name: $("roomName").value,
-    goal: $("goal").value,
-    termination: $("termination").value,
+    name: $("roomName").value.trim(),
+    goal: $("goal").value.trim(),
+    termination: $("termination").value.trim(),
     templates: selected,
   };
   state.room = await api("/api/rooms", { method: "POST", body: JSON.stringify(payload) });
@@ -94,9 +96,29 @@ async function loadRoom() {
     return;
   }
   state.room = await api(`/api/rooms/${state.room.id}`);
+  syncRoomForm();
   state.messages = await api(`/api/rooms/${state.room.id}/messages`);
   state.controllerMessages = await api(`/api/rooms/${state.room.id}/controller/messages`);
   renderRoom();
+}
+
+function syncRoomForm() {
+  if (!state.room || state.room.state !== "draft") return;
+  $("roomName").value = state.room.name;
+  $("goal").value = state.room.goal;
+  $("termination").value = state.room.termination;
+}
+
+function requireStartInputs() {
+  const missing = [];
+  if (!$("roomName").value.trim()) missing.push("Room");
+  if (!$("goal").value.trim()) missing.push("Goal");
+  if (!$("termination").value.trim()) missing.push("Termination");
+  if (missing.length > 0) {
+    alert(`${missing.join(", ")} required`);
+    return false;
+  }
+  return true;
 }
 
 function connectRoom() {
