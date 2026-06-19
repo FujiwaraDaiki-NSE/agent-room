@@ -60,6 +60,23 @@ Open the GUI:
 http://127.0.0.1:8765
 ```
 
+To show the GUI from another PC on the same network, bind the app to every interface:
+
+```bash
+uv sync
+export AGENT_ROOM_SERVER_URL=http://127.0.0.1:8765
+scripts/start_tmux_meeting.sh agent-room 0.0.0.0 8765 "$(pwd)/.runtime/data" "$(pwd)" "$HOME/.codex/auth.json"
+```
+
+Open this from the other PC, replacing `<server-lan-ip>` with the server machine's LAN IP:
+
+```text
+http://<server-lan-ip>:8765
+```
+
+If the browser cannot connect, allow TCP port `8765` through the server machine's firewall.
+Keep `AGENT_ROOM_SERVER_URL` pointed at `127.0.0.1` when agents run on the same server machine.
+
 Attach to the meeting window:
 
 ```bash

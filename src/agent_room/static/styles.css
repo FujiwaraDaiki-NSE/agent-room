@@ -489,6 +489,17 @@ body[data-room-state="open"] .controlPanel textarea {
   opacity: 0.66;
 }
 
+.rosterState {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.rosterState .stateBadge {
+  flex: 0 0 auto;
+}
+
 .roomDeck {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -622,6 +633,56 @@ body[data-room-state="open"] .controlPanel textarea {
   border: 3px solid #fff;
   border-radius: 50%;
   background: var(--accent);
+}
+
+.moodGlyph,
+.moodBadge {
+  display: grid;
+  place-items: center;
+  border: 2px solid #fff;
+  color: #fff;
+  background: #607080;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 4px 10px rgba(28, 40, 52, 0.14);
+}
+
+.moodGlyph {
+  position: absolute;
+  left: -5px;
+  bottom: 1px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+
+.moodBadge {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+
+.mood-challenge {
+  background: #b8282f;
+}
+
+.mood-curious {
+  background: #2f6fed;
+}
+
+.mood-confident {
+  background: #218a5b;
+}
+
+.mood-steady {
+  background: #4b6478;
+}
+
+.mood-quiet {
+  color: #667585;
+  background: #e7ecf1;
 }
 
 .state-speaking .avatar,

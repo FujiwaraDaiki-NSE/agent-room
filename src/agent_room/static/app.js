@@ -399,6 +399,7 @@ function renderAgents(agents) {
       const y = 50 + Math.sin(rad) * radius;
       const bubble = state.bubbles.get(agent.id);
       const agentState = agentStateClass(agent.state);
+      const signal = agentSignal(agent);
       const bubbleClass = y > 58 ? "bubbleUp" : x < 35 ? "bubbleRight" : x > 65 ? "bubbleLeft" : "bubbleDown";
       const label = seatLabel(agent, agents);
       return `
@@ -408,6 +409,7 @@ function renderAgents(agents) {
           <div class="avatar">
             <img src="${escapeHtml(agent.avatar_url)}" alt="${escapeHtml(agent.name)}" />
             <span class="stateDot" aria-hidden="true"></span>
+            <span class="moodGlyph mood-${signal.key}" title="${escapeHtml(signal.label)}" aria-label="${escapeHtml(signal.label)}">${escapeHtml(signal.glyph)}</span>
           </div>
           <div class="seatName">${escapeHtml(label)}</div>
           <div class="seatRole">${escapeHtml(agent.role)}</div>
@@ -426,7 +428,9 @@ function renderRoster(agents) {
   }
   roster.innerHTML = agents
     .map(
-      (agent) => `
+      (agent) => {
+        const signal = agentSignal(agent);
+        return `
         <article class="rosterItem state-${agentStateClass(agent.state)}" style="--accent:${safeColor(agent.accent)}">
           <img src="${escapeHtml(agent.avatar_url)}" alt="" />
           <div>
@@ -434,9 +438,13 @@ function renderRoster(agents) {
             <span>${escapeHtml(agent.role)}</span>
             <small>${escapeHtml(agent.pane_id || agent.id)}</small>
           </div>
-          <span class="stateBadge">${escapeHtml(stateLabel(agent.state))}</span>
+          <div class="rosterState">
+            <span class="moodBadge mood-${signal.key}" title="${escapeHtml(signal.label)}" aria-label="${escapeHtml(signal.label)}">${escapeHtml(signal.glyph)}</span>
+            <span class="stateBadge">${escapeHtml(stateLabel(agent.state))}</span>
+          </div>
         </article>
-      `,
+      `;
+      },
     )
     .join("");
 }
@@ -556,6 +564,78 @@ function seatLabel(agent, agents) {
   const duplicates = agents.filter((item) => item.template_id === agent.template_id);
   if (duplicates.length < 2) return agent.short_name;
   return `${agent.short_name} ${agent.id.slice(-3)}`;
+}
+
+function agentSignal(agent) {
+  const message = latestAgentMessage(agent.id);
+  if (!message) return { key: "quiet", glyph: "-", label: "No signal yet" };
+  const text = message.text.toLowerCase();
+  if (
+    includesAny(text, [
+      "反論",
+      "異論",
+      "懸念",
+      "リスク",
+      "留保",
+      "ただし",
+      "弱い",
+      "詭弁",
+      "risk",
+      "concern",
+      "weak",
+      "however",
+    ])
+  ) {
+    return { key: "challenge", glyph: "!", label: "Challenging" };
+  }
+  if (
+    includesAny(text, [
+      "調査",
+      "確認",
+      "不明",
+      "未知",
+      "仮説",
+      "観点",
+      "なぜ",
+      "question",
+      "unknown",
+      "research",
+      "verify",
+      "explore",
+    ])
+  ) {
+    return { key: "curious", glyph: "?", label: "Exploring" };
+  }
+  if (
+    includesAny(text, [
+      "同意",
+      "確信",
+      "明確",
+      "結論",
+      "十分",
+      "妥当",
+      "賛成",
+      "agree",
+      "confident",
+      "clear",
+      "settled",
+    ])
+  ) {
+    return { key: "confident", glyph: "+", label: "Confident" };
+  }
+  return { key: "steady", glyph: "=", label: "Steady" };
+}
+
+function latestAgentMessage(agentId) {
+  for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+    const message = state.messages[index];
+    if (message.actor_id === agentId && message.actor_type !== "user") return message;
+  }
+  return null;
+}
+
+function includesAny(text, terms) {
+  return terms.some((term) => text.includes(term));
 }
 
 function messageClass(message) {
