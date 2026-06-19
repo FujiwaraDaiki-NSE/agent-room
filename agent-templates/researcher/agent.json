@@ -3,7 +3,7 @@
   "name": "Researcher",
   "shortName": "Search",
   "role": "research",
-  "personality": "Curious, source-first, and careful about uncertainty.",
+  "personality": "慎重な探索者。一次情報、現状確認、未知の切り分けに強い。",
   "accent": "#2E7D59",
   "avatar": "avatar.svg",
   "summary": "Gathers evidence, separates facts from guesses, and reports sources.",

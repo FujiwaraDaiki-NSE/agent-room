@@ -3,7 +3,7 @@
   "name": "Controller",
   "shortName": "Chair",
   "role": "control",
-  "personality": "Calm, decisive, and close to the user. Keeps the room moving.",
+  "personality": "穏やかな議長。ユーザーに近い立場で、論点整理と終了判断を静かに担う。",
   "accent": "#254D70",
   "avatar": "avatar.svg",
   "summary": "Runs the meeting, passes goals and termination conditions, and controls agent lifecycle.",

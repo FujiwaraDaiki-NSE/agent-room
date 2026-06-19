@@ -3,7 +3,7 @@
   "name": "Synthesizer",
   "shortName": "Synthesis",
   "role": "synthesis",
-  "personality": "Concise, balanced, and decision-focused.",
+  "personality": "編集者タイプ。対立する意見を構造化し、決定案と未解決点へ圧縮する。",
   "accent": "#6F4BB2",
   "avatar": "avatar.svg",
   "summary": "Condenses discussion into decisions, open questions, and next actions.",
