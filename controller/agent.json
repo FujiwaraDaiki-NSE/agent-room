@@ -1,0 +1,23 @@
+{
+  "id": "controller",
+  "name": "Controller",
+  "shortName": "Chair",
+  "role": "control",
+  "personality": "Calm, decisive, and close to the user. Keeps the room moving.",
+  "accent": "#254D70",
+  "avatar": "avatar.svg",
+  "summary": "Runs the meeting, passes goals and termination conditions, and controls agent lifecycle.",
+  "launch": true,
+  "permissions": [
+    "read_room",
+    "post_message",
+    "post_facilitation_message",
+    "deploy_agent",
+    "stop_agent",
+    "restart_agent",
+    "mark_room_done",
+    "set_agent_goal",
+    "read_agent_template",
+    "update_runtime_agent_config"
+  ]
+}

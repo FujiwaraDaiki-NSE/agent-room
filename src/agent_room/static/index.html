@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Room</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <h1>Agent Room</h1>
+          <p id="tmuxHelp">tmux</p>
+        </div>
+        <div class="actions">
+          <button id="refresh">Refresh</button>
+          <button id="stopRoom" class="danger">Stop</button>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <section class="stage">
+          <div class="roomForm">
+            <label>
+              Room
+              <input id="roomName" placeholder="Room" />
+            </label>
+            <label>
+              Goal
+              <textarea id="goal" rows="3"></textarea>
+            </label>
+            <label>
+              Termination
+              <textarea id="termination" rows="2"></textarea>
+            </label>
+            <div>
+              <h2>Templates</h2>
+              <div id="templateList" class="templateList"></div>
+            </div>
+            <button id="startRoom" class="primary">Start</button>
+          </div>
+
+          <div class="tableWrap">
+            <div class="roundTable">
+              <div class="tableCore">
+                <span id="roomState">Idle</span>
+              </div>
+              <div id="agentLayer"></div>
+            </div>
+          </div>
+
+          <div class="deployBar">
+            <select id="deployTemplate"></select>
+            <button id="deployAgent">Deploy</button>
+          </div>
+        </section>
+
+        <aside class="sidebar">
+          <div class="sidebarHead">
+            <h2>Messages</h2>
+            <span id="activeRoom">No room</span>
+          </div>
+          <div id="messages" class="messages"></div>
+          <div class="composer">
+            <input id="messageText" placeholder="Message" />
+            <button id="sendMessage">Send</button>
+          </div>
+        </aside>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

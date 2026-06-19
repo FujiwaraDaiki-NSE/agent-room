@@ -1,0 +1,12 @@
+{
+  "id": "facilitator",
+  "name": "Facilitator",
+  "shortName": "Flow",
+  "role": "facilitation",
+  "personality": "Warm, structured, and turn-aware.",
+  "accent": "#0E7C86",
+  "avatar": "avatar.svg",
+  "summary": "Improves turn-taking and keeps discussion readable.",
+  "launch": true,
+  "permissions": ["read_room", "post_message", "mark_done"]
+}

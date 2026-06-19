@@ -1,0 +1,262 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from .models import (
+    AgentGoalRequest,
+    CreateRoomRequest,
+    DeployAgentRequest,
+    MarkDoneRequest,
+    PostMessageRequest,
+    StopAgentRequest,
+    UpdateAgentConfigRequest,
+)
+from .store import Store
+from .templates import TemplateError, TemplateRegistry
+from .tmux_manager import TmuxError, TmuxManager
+
+
+class Hub:
+    def __init__(self) -> None:
+        self.clients: dict[str, list[WebSocket]] = {}
+
+    async def connect(self, room_id: str, websocket: WebSocket) -> None:
+        await websocket.accept()
+        if room_id not in self.clients:
+            self.clients[room_id] = []
+        self.clients[room_id].append(websocket)
+
+    def disconnect(self, room_id: str, websocket: WebSocket) -> None:
+        sockets = self.clients.get(room_id, [])
+        if websocket in sockets:
+            sockets.remove(websocket)
+
+    async def broadcast(self, room_id: str, payload: dict[str, Any]) -> None:
+        for websocket in list(self.clients.get(room_id, [])):
+            await websocket.send_json(payload)
+
+
+def create_app(project_root: Path, data_dir: Path) -> FastAPI:
+    registry = TemplateRegistry(project_root)
+    store = Store(data_dir)
+    tmux = TmuxManager(project_root, data_dir)
+    hub = Hub()
+    app = FastAPI(title="Agent Room")
+
+    static_dir = Path(__file__).parent / "static"
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    @app.get("/")
+    def index() -> FileResponse:
+        return FileResponse(static_dir / "index.html")
+
+    @app.get("/api/templates")
+    def list_templates() -> list[dict[str, Any]]:
+        try:
+            return [template.model_dump(by_alias=True) | {"avatarUrl": f"/api/templates/{template.id}/avatar"} for template in registry.list()]
+        except TemplateError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/api/templates/{template_id}/avatar")
+    def avatar(template_id: str) -> FileResponse:
+        try:
+            return FileResponse(registry.avatar_path(template_id))
+        except TemplateError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/rooms")
+    def list_rooms() -> list[dict[str, Any]]:
+        return [room.model_dump() for room in store.list_rooms()]
+
+    @app.post("/api/rooms")
+    async def create_room(request: CreateRoomRequest) -> dict[str, Any]:
+        try:
+            room = store.create_room(request.name, request.goal, request.termination)
+            store.add_message(room.id, "user", "user", "User", request.goal, "goal")
+            for template_id in request.templates:
+                await _deploy(room.id, template_id, 1, "user")
+            room = store.get_room(room.id)
+            await hub.broadcast(room.id, {"type": "room.created", "room": room.model_dump()})
+            return room.model_dump()
+        except (ValueError, TemplateError, TmuxError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/rooms/{room_id}")
+    def get_room(room_id: str) -> dict[str, Any]:
+        try:
+            return store.get_room(room_id).model_dump()
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/rooms/{room_id}/messages")
+    def list_messages(room_id: str, after_id: int | None = None) -> list[dict[str, Any]]:
+        try:
+            return [message.model_dump() for message in store.list_messages(room_id, after_id)]
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/messages")
+    async def post_message(room_id: str, request: PostMessageRequest) -> dict[str, Any]:
+        try:
+            message = store.add_message(
+                room_id,
+                request.actor_type,
+                request.actor_id,
+                request.actor_name,
+                request.text,
+                request.kind,
+            )
+            await hub.broadcast(room_id, {"type": "message.created", "message": message.model_dump()})
+            return message.model_dump()
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/rooms/{room_id}/events")
+    def list_events(room_id: str) -> list[dict[str, Any]]:
+        try:
+            return [event.model_dump() for event in store.list_events(room_id)]
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/agents")
+    async def deploy_agent(room_id: str, request: DeployAgentRequest) -> dict[str, Any]:
+        try:
+            room = await _deploy(room_id, request.template_id, request.count, request.actor_id)
+            await hub.broadcast(room_id, {"type": "agent.deployed", "room": room.model_dump()})
+            return room.model_dump()
+        except (TemplateError, TmuxError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/agents/{agent_id}/stop")
+    async def stop_agent(room_id: str, agent_id: str, request: StopAgentRequest) -> dict[str, Any]:
+        try:
+            room = store.get_room(room_id)
+            agent = next(agent for agent in room.agents if agent.id == agent_id)
+            tmux.stop(agent, request.force)
+            room = store.update_agent(
+                room_id,
+                agent_id,
+                {"state": "stopped", "pane_id": None, "reason": request.reason},
+                request.actor_id,
+                "agent.stopped",
+            )
+            await hub.broadcast(room_id, {"type": "agent.stopped", "room": room.model_dump()})
+            return room.model_dump()
+        except (StopIteration, KeyError, TmuxError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/agents/{agent_id}/done")
+    async def mark_agent_done(room_id: str, agent_id: str, request: MarkDoneRequest) -> dict[str, Any]:
+        try:
+            room = store.update_agent(
+                room_id,
+                agent_id,
+                {"state": "done", "reason": request.reason},
+                request.actor_id,
+                "agent.done",
+            )
+            await hub.broadcast(room_id, {"type": "agent.done", "room": room.model_dump()})
+            return room.model_dump()
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/agents/{agent_id}/goal")
+    async def set_agent_goal(room_id: str, agent_id: str, request: AgentGoalRequest) -> dict[str, Any]:
+        try:
+            room = store.get_room(room_id)
+            agent = next(agent for agent in room.agents if agent.id == agent_id)
+            tmux.send_goal(agent, request.goal, request.termination)
+            room = store.update_agent(
+                room_id,
+                agent_id,
+                {"state": "active", "goal": request.goal, "termination": request.termination},
+                request.actor_id,
+                "agent.goal_set",
+            )
+            await hub.broadcast(room_id, {"type": "agent.goal_set", "room": room.model_dump()})
+            return room.model_dump()
+        except (StopIteration, KeyError, TmuxError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/agents/{agent_id}/config")
+    async def update_agent_config(room_id: str, agent_id: str, request: UpdateAgentConfigRequest) -> dict[str, Any]:
+        try:
+            room = store.get_room(room_id)
+            agent = next(agent for agent in room.agents if agent.id == agent_id)
+            if not agent.runtime_dir:
+                raise TmuxError(f"agent has no runtime directory: {agent.id}")
+            runtime_dir = Path(agent.runtime_dir).resolve()
+            target = (runtime_dir / request.relative_path).resolve()
+            if runtime_dir not in target.parents and target != runtime_dir:
+                raise TmuxError("config path must stay inside the agent runtime directory")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(request.content, encoding="utf-8")
+            room = store.update_agent(
+                room_id,
+                agent_id,
+                {"state": agent.state, "config_path": request.relative_path, "reason": request.reason},
+                request.actor_id,
+                "agent.config_updated",
+            )
+            await hub.broadcast(room_id, {"type": "agent.config_updated", "room": room.model_dump()})
+            return room.model_dump()
+        except (StopIteration, KeyError, TmuxError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/done")
+    async def mark_room_done(room_id: str, request: MarkDoneRequest) -> dict[str, Any]:
+        try:
+            room = store.set_room_state(room_id, "done", request.actor_id, request.reason)
+            await hub.broadcast(room_id, {"type": "room.done", "room": room.model_dump()})
+            return room.model_dump()
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/stop")
+    async def stop_room(room_id: str, request: StopAgentRequest) -> dict[str, Any]:
+        try:
+            room = store.get_room(room_id)
+            for agent in room.agents:
+                if agent.pane_id and agent.state not in {"stopped", "done"}:
+                    tmux.stop(agent, request.force)
+                    store.update_agent(
+                        room_id,
+                        agent.id,
+                        {"state": "stopped", "pane_id": None, "reason": request.reason},
+                        request.actor_id,
+                        "agent.stopped",
+                    )
+            room = store.set_room_state(room_id, "stopped", request.actor_id, request.reason)
+            await hub.broadcast(room_id, {"type": "room.stopped", "room": room.model_dump()})
+            return room.model_dump()
+        except (KeyError, TmuxError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/tmux")
+    def tmux_status() -> dict[str, str | bool]:
+        return tmux.status()
+
+    @app.websocket("/ws/rooms/{room_id}")
+    async def room_ws(websocket: WebSocket, room_id: str) -> None:
+        await hub.connect(room_id, websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            hub.disconnect(room_id, websocket)
+
+    async def _deploy(room_id: str, template_id: str, count: int, actor_id: str) -> Any:
+        room = store.get_room(room_id)
+        template = registry.get(template_id)
+        template_dir = registry.path_for(template_id)
+        for _ in range(count):
+            agent = tmux.deploy(room, template, template_dir, actor_id, room.goal, room.termination)
+            room = store.add_agent(room_id, agent, actor_id)
+        return room
+
+    return app

@@ -1,0 +1,149 @@
+from __future__ import annotations
+
+import os
+import shlex
+import shutil
+import subprocess
+import time
+import uuid
+from pathlib import Path
+
+from .models import AgentInstance, AgentTemplate, Room
+
+
+class TmuxError(RuntimeError):
+    pass
+
+
+class TmuxManager:
+    def __init__(self, project_root: Path, data_dir: Path) -> None:
+        self.project_root = project_root
+        self.data_dir = data_dir
+        self.runtime_root = project_root / "runtime"
+
+    def status(self) -> dict[str, str | bool]:
+        pane = os.environ.get("TMUX_PANE")
+        session = self._tmux_value("#S") if pane else ""
+        window = self._tmux_value("#W") if pane else ""
+        attach = f"tmux attach -t {session}" if session else ""
+        return {
+            "inside_tmux": bool(pane),
+            "pane": pane or "",
+            "session": session,
+            "window": window,
+            "attach_command": attach,
+        }
+
+    def deploy(
+        self,
+        room: Room,
+        template: AgentTemplate,
+        template_dir: Path,
+        actor_id: str,
+        goal: str,
+        termination: str,
+    ) -> AgentInstance:
+        if not os.environ.get("TMUX_PANE"):
+            raise TmuxError("agent deploy requires the server to run inside tmux")
+        instance_id = f"{template.id}-{uuid.uuid4().hex[:6]}"
+        runtime_dir = self.runtime_root / "rooms" / room.id / "agents" / instance_id
+        if runtime_dir.exists():
+            raise TmuxError(f"runtime directory already exists: {runtime_dir}")
+        shutil.copytree(template_dir, runtime_dir)
+        prompt_path = runtime_dir / "room-goal.md"
+        prompt_path.write_text(self._goal_prompt(room, template, instance_id, goal, termination), encoding="utf-8")
+        command = self._agent_command(runtime_dir, prompt_path)
+        pane_id = self._split_pane(command)
+        avatar_url = f"/api/templates/{template.id}/avatar"
+        return AgentInstance(
+            id=instance_id,
+            room_id=room.id,
+            template_id=template.id,
+            name=template.name,
+            short_name=template.short_name,
+            role=template.role,
+            personality=template.personality,
+            accent=template.accent,
+            avatar_url=avatar_url,
+            state="active",
+            pane_id=pane_id,
+            runtime_dir=str(runtime_dir),
+        )
+
+    def stop(self, agent: AgentInstance, force: bool) -> None:
+        if not agent.pane_id:
+            raise TmuxError(f"agent has no tmux pane: {agent.id}")
+        if not force:
+            subprocess.run(["tmux", "send-keys", "-t", agent.pane_id, "/exit", "Enter"], check=False)
+            time.sleep(1.0)
+        subprocess.run(["tmux", "kill-pane", "-t", agent.pane_id], check=False)
+
+    def send_goal(self, agent: AgentInstance, goal: str, termination: str) -> None:
+        if not agent.pane_id:
+            raise TmuxError(f"agent has no tmux pane: {agent.id}")
+        text = "\n".join(["/goal", "Goal:", goal, "", "Termination:", termination])
+        subprocess.run(["tmux", "send-keys", "-t", agent.pane_id, text, "Enter"], check=True)
+
+    def _goal_prompt(
+        self,
+        room: Room,
+        template: AgentTemplate,
+        instance_id: str,
+        goal: str,
+        termination: str,
+    ) -> str:
+        server_url = os.environ.get("AGENT_ROOM_SERVER_URL")
+        if not server_url:
+            raise TmuxError("AGENT_ROOM_SERVER_URL is required")
+        return "\n".join(
+            [
+                "/goal",
+                f"Room: {room.id}",
+                f"Agent: {instance_id}",
+                f"Role: {template.name}",
+                "",
+                "Goal:",
+                goal,
+                "",
+                "Termination:",
+                termination,
+                "",
+                "Room commands:",
+                f"- Read: uv run agent-room room read --server {server_url} --room-id {room.id}",
+                f"- Post: uv run agent-room room post --server {server_url} --room-id {room.id} --agent-id {instance_id} --agent-name {shlex.quote(template.name)} --text '<message>'",
+                f"- Done: uv run agent-room room done --server {server_url} --room-id {room.id} --agent-id {instance_id} --reason '<reason>'",
+                "",
+                "Speak to the meeting only through the room commands.",
+            ]
+        )
+
+    def _agent_command(self, runtime_dir: Path, prompt_path: Path) -> str:
+        runtime = shlex.quote(str(runtime_dir))
+        codex_home = shlex.quote(str(runtime_dir / ".codex"))
+        prompt_name = shlex.quote(prompt_path.name)
+        return (
+            f"cd {runtime} && "
+            f"export CODEX_HOME={codex_home} && "
+            f'codex --sandbox workspace-write --ask-for-approval never "$(cat {prompt_name})"; '
+            "exec bash"
+        )
+
+    def _split_pane(self, command: str) -> str:
+        target = os.environ["TMUX_PANE"]
+        result = subprocess.run(
+            ["tmux", "split-window", "-t", target, "-h", "-P", "-F", "#{pane_id}", command],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        subprocess.run(["tmux", "select-layout", "tiled"], check=False)
+        return result.stdout.strip()
+
+    def _tmux_value(self, pattern: str) -> str:
+        result = subprocess.run(
+            ["tmux", "display-message", "-p", pattern],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        return result.stdout.strip()
