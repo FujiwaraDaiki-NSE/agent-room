@@ -58,7 +58,7 @@ class TmuxManager:
             self._goal_prompt(room, template, instance_id, goal, controller_termination, agent_termination),
             encoding="utf-8",
         )
-        command = self._agent_command(runtime_dir, prompt_path)
+        command = self._agent_command(runtime_dir, prompt_path, template.scope == "controller")
         pane_id = self._split_pane(command)
         avatar_url = f"/api/templates/{template.id}/avatar"
         return AgentInstance(
@@ -180,17 +180,40 @@ class TmuxManager:
             )
         return lines
 
-    def _agent_command(self, runtime_dir: Path, prompt_path: Path) -> str:
+    def _agent_command(self, runtime_dir: Path, prompt_path: Path, can_write: bool) -> str:
         runtime = shlex.quote(str(runtime_dir))
         codex_home = shlex.quote(str(runtime_dir / ".codex"))
-        network_config = shlex.quote("sandbox_workspace_write.network_access=true")
         prompt_name = shlex.quote(prompt_path.name)
+        permission_args = self._permission_args(can_write)
         return (
             f"cd {runtime} && "
             f"export CODEX_HOME={codex_home} && "
-            f'codex --sandbox workspace-write --ask-for-approval never -c {network_config} "$(cat {prompt_name})"; '
+            f'codex {permission_args} "$(cat {prompt_name})"; '
             "exec bash"
         )
+
+    def _permission_args(self, can_write: bool) -> str:
+        if can_write:
+            args = [
+                "--sandbox",
+                "workspace-write",
+                "--ask-for-approval",
+                "never",
+                "-c",
+                "sandbox_workspace_write.network_access=true",
+            ]
+        else:
+            args = [
+                "--ask-for-approval",
+                "never",
+                "-c",
+                'default_permissions="agent_read_network"',
+                "-c",
+                'permissions.agent_read_network.extends=":read-only"',
+                "-c",
+                "permissions.agent_read_network.network.enabled=true",
+            ]
+        return " ".join(shlex.quote(arg) for arg in args)
 
     def _link_shared_auth(self, runtime_dir: Path) -> None:
         if not self.codex_auth_file.is_file():

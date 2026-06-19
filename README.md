@@ -14,6 +14,7 @@ The room log is the shared state. Each agent reads and posts through the room AP
 - tmux meeting window
 - Codex TUI agents in panes in the same tmux window
 - Controller agent with lifecycle commands
+- Controller runs with workspace write access; other agents run read-only with network access
 - Multiple agent templates with personalities
 - Per-template `.codex` and `AGENTS.md`
 - Codex subagent config under each template
