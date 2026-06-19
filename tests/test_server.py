@@ -19,7 +19,8 @@ def test_api_room_without_agents(tmp_path) -> None:
         json={
             "name": "Design",
             "goal": "Discuss architecture",
-            "termination": "All agents done",
+            "controller_termination": "Controller closes the room",
+            "agent_termination": "Each agent is done",
             "templates": [],
         },
     )
@@ -27,6 +28,8 @@ def test_api_room_without_agents(tmp_path) -> None:
     assert response.status_code == 200
     room = response.json()
     assert room["goal"] == "Discuss architecture"
+    assert room["controller_termination"] == "Controller closes the room"
+    assert room["agent_termination"] == "Each agent is done"
     assert room["agents"] == []
 
     messages = client.get(f"/api/rooms/{room['id']}/messages").json()
@@ -66,7 +69,8 @@ def test_deploy_requires_tmux(tmp_path, monkeypatch) -> None:
         json={
             "name": "Design",
             "goal": "Discuss architecture",
-            "termination": "All agents done",
+            "controller_termination": "Controller closes the room",
+            "agent_termination": "Each agent is done",
             "templates": [],
         },
     ).json()

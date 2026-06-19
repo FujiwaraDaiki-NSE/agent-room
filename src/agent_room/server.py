@@ -85,7 +85,12 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
         try:
             current = store.current_room()
             _stop_active_agents(current.id, "user", "room restart", False)
-            room = store.create_room(request.name, request.goal, request.termination)
+            room = store.create_room(
+                request.name,
+                request.goal,
+                request.controller_termination,
+                request.agent_termination,
+            )
             store.add_message(room.id, "user", "user", "User", request.goal, "goal")
             for template_id in request.templates:
                 await _deploy(room.id, template_id, 1, "user")
@@ -208,15 +213,31 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/rooms/{room_id}/agents/{agent_id}/goal")
-    async def set_agent_goal(room_id: str, agent_id: str, request: AgentGoalRequest) -> dict[str, Any]:
+    async def set_agent_goal(
+        room_id: str,
+        agent_id: str,
+        request: AgentGoalRequest,
+    ) -> dict[str, Any]:
         try:
             room = store.get_room(room_id)
             agent = next(agent for agent in room.agents if agent.id == agent_id)
-            tmux.send_goal(agent, request.goal, request.termination)
+            tmux.send_goal(
+                agent,
+                request.goal,
+                request.controller_termination,
+                request.agent_termination,
+            )
             room = store.update_agent(
                 room_id,
                 agent_id,
-                {"state": "active", "goal": request.goal, "termination": request.termination},
+                {
+                    "state": "active",
+                    "goal": request.goal,
+                    "controller_termination": (
+                        request.controller_termination if agent.template_id == "controller" else None
+                    ),
+                    "agent_termination": request.agent_termination,
+                },
                 request.actor_id,
                 "agent.goal_set",
             )
@@ -297,7 +318,15 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
         template = registry.get(template_id)
         template_dir = registry.path_for(template_id)
         for _ in range(count):
-            agent = tmux.deploy(room, template, template_dir, actor_id, room.goal, room.termination)
+            agent = tmux.deploy(
+                room,
+                template,
+                template_dir,
+                actor_id,
+                room.goal,
+                room.controller_termination,
+                room.agent_termination,
+            )
             room = store.add_agent(room_id, agent, actor_id)
         return room
 

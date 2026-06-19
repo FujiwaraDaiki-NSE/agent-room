@@ -80,13 +80,14 @@ This keeps personality and agent config isolated without forcing each pane to lo
 ## Room Flow
 
 1. Enter `Goal`.
-2. Enter `Termination`.
-3. Select templates.
-4. Press `Start`.
-5. The app creates one tmux pane per selected agent. `Controller` is always included.
-6. Each Codex TUI starts with `/goal`.
-7. Agents read and post through the room commands.
-8. The controller marks the room done or stops agent panes.
+2. Enter `Controller Termination`.
+3. Enter `Agent Termination`.
+4. Select templates.
+5. Press `Start`.
+6. The app creates one tmux pane per selected agent. `Controller` is always included.
+7. Each Codex TUI starts with `/goal`.
+8. Agents read and post through the room commands.
+9. The controller marks the room done or stops agent panes.
 
 ## Room Controls
 
@@ -97,6 +98,7 @@ This keeps personality and agent config isolated without forcing each pane to lo
 
 The app keeps only one current room. Use `New` to clear the public log and controller private log by replacing the room.
 The room name is internal and hidden in the GUI.
+After `Start`, the top brief keeps `Goal`, `Controller Termination`, and `Agent Termination` visible.
 
 The `Controller` panel is private. Use it for instructions or whispers that should go only to the controller.
 
@@ -115,7 +117,7 @@ Controller-only lifecycle commands:
 ```bash
 uv run agent-room agent deploy --server http://127.0.0.1:8765 --room-id <room-id> --template-id <template-id> --count 1 --actor-id <controller-id>
 uv run agent-room agent stop --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <target-agent-id> --actor-id <controller-id> --reason "<reason>" --graceful
-uv run agent-room agent goal --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <target-agent-id> --actor-id <controller-id> --goal "<goal>" --termination "<termination>"
+uv run agent-room agent goal --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <target-agent-id> --actor-id <controller-id> --goal "<goal>" --controller-termination "<controller termination>" --agent-termination "<agent termination>"
 uv run agent-room agent config --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <target-agent-id> --actor-id <controller-id> --relative-path ".codex/config.toml" --content-file ./new-config.toml --reason "<reason>"
 ```
 

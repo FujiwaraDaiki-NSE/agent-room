@@ -69,7 +69,8 @@ async function resetRoom() {
   state.controllerMessages = [];
   state.bubbles.clear();
   $("goal").value = "";
-  $("termination").value = "";
+  $("controllerTermination").value = "";
+  $("agentTermination").value = "";
   connectRoom();
   await loadRoom();
 }
@@ -81,7 +82,8 @@ async function startRoom() {
   const payload = {
     name: state.room.name,
     goal: $("goal").value.trim(),
-    termination: $("termination").value.trim(),
+    controller_termination: $("controllerTermination").value.trim(),
+    agent_termination: $("agentTermination").value.trim(),
     templates: selected,
   };
   state.room = await api("/api/rooms", { method: "POST", body: JSON.stringify(payload) });
@@ -104,14 +106,16 @@ async function loadRoom() {
 function syncRoomForm() {
   if (!state.room || state.room.state !== "draft") return;
   $("goal").value = state.room.goal;
-  $("termination").value = state.room.termination;
+  $("controllerTermination").value = state.room.controller_termination;
+  $("agentTermination").value = state.room.agent_termination;
 }
 
 function requireStartInputs() {
   const missing = [];
   if (!state.room) missing.push("Room state");
   if (!$("goal").value.trim()) missing.push("Goal");
-  if (!$("termination").value.trim()) missing.push("Termination");
+  if (!$("controllerTermination").value.trim()) missing.push("Controller Termination");
+  if (!$("agentTermination").value.trim()) missing.push("Agent Termination");
   if (missing.length > 0) {
     alert(`${missing.join(", ")} required`);
     return false;
@@ -233,9 +237,17 @@ function renderRoom() {
   const room = state.room;
   $("activeRoom").textContent = room ? room.name : "No room";
   $("roomState").textContent = room ? room.state : "Idle";
+  renderBrief(room);
   renderAgents(room ? room.agents : []);
   renderMessages();
   renderControllerMessages();
+}
+
+function renderBrief(room) {
+  $("briefGoal").textContent = room && room.goal ? room.goal : "Draft";
+  $("briefControllerTermination").textContent =
+    room && room.controller_termination ? room.controller_termination : "Draft";
+  $("briefAgentTermination").textContent = room && room.agent_termination ? room.agent_termination : "Draft";
 }
 
 function renderAgents(agents) {

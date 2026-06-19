@@ -47,7 +47,7 @@ class Store:
             room_id = data["current_room_id"]
             if room_id and room_id in data["rooms"]:
                 return self._room(data, room_id)
-            room = self._new_room(AUTO_ROOM_NAME, "", "", "draft")
+            room = self._new_room(AUTO_ROOM_NAME, "", "", "", "draft")
             data["rooms"] = {room.id: room.model_dump()}
             data["messages"] = {room.id: []}
             data["controller_messages"] = {room.id: []}
@@ -60,7 +60,7 @@ class Store:
     def reset_room(self) -> Room:
         with self.lock:
             data = self._read()
-            room = self._new_room(AUTO_ROOM_NAME, "", "", "draft")
+            room = self._new_room(AUTO_ROOM_NAME, "", "", "", "draft")
             data["rooms"] = {room.id: room.model_dump()}
             data["messages"] = {room.id: []}
             data["controller_messages"] = {room.id: []}
@@ -70,17 +70,25 @@ class Store:
             self._write(data)
             return room
 
-    def create_room(self, name: str, goal: str, termination: str) -> Room:
+    def create_room(
+        self,
+        name: str,
+        goal: str,
+        controller_termination: str,
+        agent_termination: str,
+    ) -> Room:
         self._require("name", name)
         self._require("goal", goal)
-        self._require("termination", termination)
+        self._require("controller_termination", controller_termination)
+        self._require("agent_termination", agent_termination)
         with self.lock:
             data = self._read()
             room_id = self._current_room_id(data)
             room = self._room(data, room_id)
             room.name = name
             room.goal = goal
-            room.termination = termination
+            room.controller_termination = controller_termination
+            room.agent_termination = agent_termination
             room.state = "open"
             room.agents = []
             data["rooms"] = {room.id: room.model_dump()}
@@ -279,6 +287,11 @@ class Store:
             rooms = list(data["rooms"].keys())
             data["current_room_id"] = rooms[-1] if rooms else None
         for room_id in data["rooms"].keys():
+            room = data["rooms"][room_id]
+            if "controller_termination" not in room:
+                room["controller_termination"] = room.get("termination", "")
+            if "agent_termination" not in room:
+                room["agent_termination"] = room.get("termination", "")
             if room_id not in data["messages"]:
                 data["messages"][room_id] = []
             if room_id not in data["controller_messages"]:
@@ -293,13 +306,21 @@ class Store:
             raise KeyError("current room not found")
         return room_id
 
-    def _new_room(self, name: str, goal: str, termination: str, state: str) -> Room:
+    def _new_room(
+        self,
+        name: str,
+        goal: str,
+        controller_termination: str,
+        agent_termination: str,
+        state: str,
+    ) -> Room:
         room_id = f"room-{uuid.uuid4().hex[:8]}"
         return Room(
             id=room_id,
             name=name,
             goal=goal,
-            termination=termination,
+            controller_termination=controller_termination,
+            agent_termination=agent_termination,
             state=state,  # type: ignore[arg-type]
             created_at=now_iso(),
             agents=[],

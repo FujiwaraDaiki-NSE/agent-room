@@ -37,7 +37,8 @@ class AgentInstance(BaseModel):
     pane_id: str | None = None
     runtime_dir: str | None = None
     goal: str | None = None
-    termination: str | None = None
+    controller_termination: str | None = None
+    agent_termination: str | None = None
     config_path: str | None = None
     reason: str | None = None
 
@@ -68,7 +69,8 @@ class Room(BaseModel):
     id: str
     name: str
     goal: str
-    termination: str
+    controller_termination: str
+    agent_termination: str
     state: Literal["draft", "open", "done", "stopped"]
     created_at: str
     agents: list[AgentInstance]
@@ -77,7 +79,8 @@ class Room(BaseModel):
 class CreateRoomRequest(BaseModel):
     name: str
     goal: str
-    termination: str
+    controller_termination: str
+    agent_termination: str
     templates: list[str]
 
 
@@ -109,7 +112,8 @@ class MarkDoneRequest(BaseModel):
 class AgentGoalRequest(BaseModel):
     actor_id: str
     goal: str
-    termination: str
+    controller_termination: str
+    agent_termination: str
 
 
 class UpdateAgentConfigRequest(BaseModel):

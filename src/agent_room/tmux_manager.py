@@ -42,7 +42,8 @@ class TmuxManager:
         template_dir: Path,
         actor_id: str,
         goal: str,
-        termination: str,
+        controller_termination: str,
+        agent_termination: str,
     ) -> AgentInstance:
         if not os.environ.get("TMUX_PANE"):
             raise TmuxError("agent deploy requires the server to run inside tmux")
@@ -53,7 +54,10 @@ class TmuxManager:
         shutil.copytree(template_dir, runtime_dir)
         self._link_shared_auth(runtime_dir)
         prompt_path = runtime_dir / "room-goal.md"
-        prompt_path.write_text(self._goal_prompt(room, template, instance_id, goal, termination), encoding="utf-8")
+        prompt_path.write_text(
+            self._goal_prompt(room, template, instance_id, goal, controller_termination, agent_termination),
+            encoding="utf-8",
+        )
         command = self._agent_command(runtime_dir, prompt_path)
         pane_id = self._split_pane(command)
         avatar_url = f"/api/templates/{template.id}/avatar"
@@ -70,6 +74,9 @@ class TmuxManager:
             state="active",
             pane_id=pane_id,
             runtime_dir=str(runtime_dir),
+            goal=goal,
+            controller_termination=controller_termination if template.scope == "controller" else None,
+            agent_termination=agent_termination,
         )
 
     def stop(self, agent: AgentInstance, force: bool) -> None:
@@ -80,10 +87,18 @@ class TmuxManager:
             time.sleep(1.0)
         subprocess.run(["tmux", "kill-pane", "-t", agent.pane_id], check=False)
 
-    def send_goal(self, agent: AgentInstance, goal: str, termination: str) -> None:
+    def send_goal(
+        self,
+        agent: AgentInstance,
+        goal: str,
+        controller_termination: str,
+        agent_termination: str,
+    ) -> None:
         if not agent.pane_id:
             raise TmuxError(f"agent has no tmux pane: {agent.id}")
-        text = "\n".join(["/goal", "Goal:", goal, "", "Termination:", termination])
+        text = "\n".join(
+            self._goal_lines(agent.template_id == "controller", goal, controller_termination, agent_termination)
+        )
         subprocess.run(["tmux", "send-keys", "-t", agent.pane_id, text, "Enter"], check=True)
 
     def _goal_prompt(
@@ -92,23 +107,25 @@ class TmuxManager:
         template: AgentTemplate,
         instance_id: str,
         goal: str,
-        termination: str,
+        controller_termination: str,
+        agent_termination: str,
     ) -> str:
         server_url = os.environ.get("AGENT_ROOM_SERVER_URL")
         if not server_url:
             raise TmuxError("AGENT_ROOM_SERVER_URL is required")
+        goal_lines = self._goal_lines(
+            template.scope == "controller",
+            goal,
+            controller_termination,
+            agent_termination,
+        )
         lines = [
             "/goal",
             f"Room: {room.id}",
             f"Agent: {instance_id}",
             f"Role: {template.name}",
             "",
-            "Goal:",
-            goal,
-            "",
-            "Termination:",
-            termination,
-            "",
+            *goal_lines[1:],
             "Room commands:",
             f"- Read: uv run agent-room room read --server {server_url} --room-id {room.id}",
             f"- Post: uv run agent-room room post --server {server_url} --room-id {room.id} --agent-id {instance_id} --agent-name {shlex.quote(template.name)} --text '<message>'",
@@ -128,6 +145,40 @@ class TmuxManager:
                 ]
             )
         return "\n".join(lines)
+
+    def _goal_lines(
+        self,
+        is_controller: bool,
+        goal: str,
+        controller_termination: str,
+        agent_termination: str,
+    ) -> list[str]:
+        lines = [
+            "/goal",
+            "Goal:",
+            goal,
+            "",
+        ]
+        if is_controller:
+            lines.extend(
+                [
+                    "Controller Termination:",
+                    controller_termination,
+                    "",
+                    "Agent Termination:",
+                    agent_termination,
+                    "",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "Agent Termination:",
+                    agent_termination,
+                    "",
+                ]
+            )
+        return lines
 
     def _agent_command(self, runtime_dir: Path, prompt_path: Path) -> str:
         runtime = shlex.quote(str(runtime_dir))

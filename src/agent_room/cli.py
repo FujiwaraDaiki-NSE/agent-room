@@ -88,7 +88,8 @@ def main() -> None:
     goal.add_argument("--agent-id", required=True)
     goal.add_argument("--actor-id", required=True)
     goal.add_argument("--goal", required=True)
-    goal.add_argument("--termination", required=True)
+    goal.add_argument("--controller-termination", required=True)
+    goal.add_argument("--agent-termination", required=True)
 
     config = agent_sub.add_parser("config")
     add_server_args(config)
@@ -182,7 +183,12 @@ def handle_agent(args: argparse.Namespace) -> None:
         print_json(request("POST", f"{args.server}/api/rooms/{args.room_id}/agents/{args.agent_id}/stop", payload))
         return
     if args.agent_command == "goal":
-        payload = {"actor_id": args.actor_id, "goal": args.goal, "termination": args.termination}
+        payload = {
+            "actor_id": args.actor_id,
+            "goal": args.goal,
+            "controller_termination": args.controller_termination,
+            "agent_termination": args.agent_termination,
+        }
         print_json(request("POST", f"{args.server}/api/rooms/{args.room_id}/agents/{args.agent_id}/goal", payload))
         return
     if args.agent_command == "config":
