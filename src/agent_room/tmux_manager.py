@@ -183,11 +183,12 @@ class TmuxManager:
     def _agent_command(self, runtime_dir: Path, prompt_path: Path) -> str:
         runtime = shlex.quote(str(runtime_dir))
         codex_home = shlex.quote(str(runtime_dir / ".codex"))
+        network_config = shlex.quote("sandbox_workspace_write.network_access=true")
         prompt_name = shlex.quote(prompt_path.name)
         return (
             f"cd {runtime} && "
             f"export CODEX_HOME={codex_home} && "
-            f'codex --sandbox workspace-write --ask-for-approval never "$(cat {prompt_name})"; '
+            f'codex --sandbox workspace-write --ask-for-approval never -c {network_config} "$(cat {prompt_name})"; '
             "exec bash"
         )
 

@@ -18,6 +18,18 @@ def test_link_shared_auth(tmp_path) -> None:
     assert linked.resolve() == auth_file
 
 
+def test_agent_command_enables_network_for_room_api(tmp_path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    runtime_dir = tmp_path / "runtime" / "agent"
+    prompt_path = runtime_dir / "room-goal.md"
+    manager = TmuxManager(Path.cwd(), tmp_path, auth_file)
+
+    command = manager._agent_command(runtime_dir, prompt_path)
+
+    assert "-c sandbox_workspace_write.network_access=true" in command
+
+
 def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("AGENT_ROOM_SERVER_URL", "http://127.0.0.1:8765")
     auth_file = tmp_path / "auth.json"
