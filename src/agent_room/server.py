@@ -41,10 +41,10 @@ class Hub:
             await websocket.send_json(payload)
 
 
-def create_app(project_root: Path, data_dir: Path) -> FastAPI:
+def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> FastAPI:
     registry = TemplateRegistry(project_root)
     store = Store(data_dir)
-    tmux = TmuxManager(project_root, data_dir)
+    tmux = TmuxManager(project_root, data_dir, codex_auth_file)
     hub = Hub()
     app = FastAPI(title="Agent Room")
 

@@ -49,7 +49,7 @@ Run the meeting app inside tmux. This tmux session is for the meeting app. Agent
 
 ```bash
 uv sync
-scripts/start_tmux_meeting.sh agent-room 127.0.0.1 8765 "$(pwd)/.runtime/data" "$(pwd)"
+scripts/start_tmux_meeting.sh agent-room 127.0.0.1 8765 "$(pwd)/.runtime/data" "$(pwd)" "$HOME/.codex/auth.json"
 ```
 
 Open the GUI:
@@ -63,6 +63,18 @@ Attach to the meeting window:
 ```bash
 tmux attach -t agent-room
 ```
+
+## Authentication
+
+Agent templates keep separate `.codex/config.toml` files, but they share the Codex login token through `--codex-auth-file`.
+
+The app links each runtime agent's `.codex/auth.json` to the file you pass:
+
+```bash
+--codex-auth-file "$HOME/.codex/auth.json"
+```
+
+This keeps personality and agent config isolated without forcing each pane to log in again.
 
 ## Room Flow
 
@@ -140,7 +152,7 @@ uv run pytest
 Run the server without tmux for API and GUI work:
 
 ```bash
-uv run agent-room serve --host 127.0.0.1 --port 8765 --data-dir "$(pwd)/.runtime/data" --project-root "$(pwd)"
+uv run agent-room serve --host 127.0.0.1 --port 8765 --data-dir "$(pwd)/.runtime/data" --project-root "$(pwd)" --codex-auth-file "$HOME/.codex/auth.json"
 ```
 
 Agent deployment requires the server to run inside tmux.

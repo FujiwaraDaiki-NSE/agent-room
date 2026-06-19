@@ -24,6 +24,7 @@ def main() -> None:
     serve.add_argument("--port", required=True, type=int)
     serve.add_argument("--data-dir", required=True)
     serve.add_argument("--project-root", required=True)
+    serve.add_argument("--codex-auth-file", required=True)
 
     room = subparsers.add_parser("room")
     room_sub = room.add_subparsers(dest="room_command", required=True)
@@ -87,7 +88,11 @@ def main() -> None:
     if args.command == "serve":
         server_url = f"http://{args.host}:{args.port}"
         os.environ["AGENT_ROOM_SERVER_URL"] = server_url
-        app = create_app(Path(args.project_root).resolve(), Path(args.data_dir).resolve())
+        app = create_app(
+            Path(args.project_root).resolve(),
+            Path(args.data_dir).resolve(),
+            Path(args.codex_auth_file).resolve(),
+        )
         uvicorn.run(app, host=args.host, port=args.port)
         return
 

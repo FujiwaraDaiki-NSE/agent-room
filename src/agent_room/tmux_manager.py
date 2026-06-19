@@ -16,9 +16,10 @@ class TmuxError(RuntimeError):
 
 
 class TmuxManager:
-    def __init__(self, project_root: Path, data_dir: Path) -> None:
+    def __init__(self, project_root: Path, data_dir: Path, codex_auth_file: Path) -> None:
         self.project_root = project_root
         self.data_dir = data_dir
+        self.codex_auth_file = codex_auth_file
         self.runtime_root = project_root / "runtime"
 
     def status(self) -> dict[str, str | bool]:
@@ -50,6 +51,7 @@ class TmuxManager:
         if runtime_dir.exists():
             raise TmuxError(f"runtime directory already exists: {runtime_dir}")
         shutil.copytree(template_dir, runtime_dir)
+        self._link_shared_auth(runtime_dir)
         prompt_path = runtime_dir / "room-goal.md"
         prompt_path.write_text(self._goal_prompt(room, template, instance_id, goal, termination), encoding="utf-8")
         command = self._agent_command(runtime_dir, prompt_path)
@@ -127,6 +129,14 @@ class TmuxManager:
             f'codex --sandbox workspace-write --ask-for-approval never "$(cat {prompt_name})"; '
             "exec bash"
         )
+
+    def _link_shared_auth(self, runtime_dir: Path) -> None:
+        if not self.codex_auth_file.is_file():
+            raise TmuxError(f"codex auth file not found: {self.codex_auth_file}")
+        target = runtime_dir / ".codex" / "auth.json"
+        if target.exists() or target.is_symlink():
+            raise TmuxError(f"runtime auth file already exists: {target}")
+        target.symlink_to(self.codex_auth_file)
 
     def _split_pane(self, command: str) -> str:
         target = os.environ["TMUX_PANE"]

@@ -6,7 +6,9 @@ from agent_room.server import create_app
 
 
 def test_api_room_without_agents(tmp_path) -> None:
-    client = TestClient(create_app(Path.cwd(), tmp_path))
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
 
     response = client.post(
         "/api/rooms",
@@ -29,7 +31,9 @@ def test_api_room_without_agents(tmp_path) -> None:
 
 def test_deploy_requires_tmux(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("TMUX_PANE", raising=False)
-    client = TestClient(create_app(Path.cwd(), tmp_path))
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
     room = client.post(
         "/api/rooms",
         json={
