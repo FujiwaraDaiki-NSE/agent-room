@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -50,6 +50,13 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
 
     static_dir = Path(__file__).parent / "static"
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    @app.middleware("http")
+    async def no_cache_static(request: Request, call_next: Any) -> Any:
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/")
     def index() -> FileResponse:
