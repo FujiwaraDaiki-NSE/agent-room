@@ -10,6 +10,7 @@ The room log is the shared state. Each agent reads and posts through the room AP
 - FastAPI room server
 - Round-table GUI with agent avatars and speech bubbles
 - Right-side chronological message log
+- Separate private controller chat
 - tmux meeting window
 - Codex TUI agents in panes in the same tmux window
 - Controller agent with lifecycle commands
@@ -82,20 +83,21 @@ This keeps personality and agent config isolated without forcing each pane to lo
 2. Enter `Termination`.
 3. Select templates.
 4. Press `Start`.
-5. The app creates one tmux pane per selected agent.
+5. The app creates one tmux pane per selected agent. `Controller` is always included.
 6. Each Codex TUI starts with `/goal`.
 7. Agents read and post through the room commands.
 8. The controller marks the room done or stops agent panes.
 
 ## Room Controls
 
-- `New`: Clear the current view and prepare a new room.
-- `Start`: Create a room from the form and deploy the selected templates.
-- Room select: Open a saved room and its message history.
+- `New`: Stop current agent panes and replace the current room with a fresh draft room.
+- `Start`: Start the current room from the form and deploy the selected templates.
 - `Close`: Stop the current room and close only its agent panes.
-- `Refresh`: Reload templates, rooms, messages, and tmux status.
+- `Refresh`: Reload templates, the current room, messages, and tmux status.
 
-Messages are room history. They are not deleted when a room is closed. Use `New` to clear the current view, or pick another room from the room select.
+The app keeps only one current room. Use `New` to clear the public log and controller private log by replacing the room.
+
+The `Controller` panel is private. Use it for instructions or whispers that should go only to the controller.
 
 ## Agent Commands
 
@@ -117,6 +119,13 @@ uv run agent-room agent config --server http://127.0.0.1:8765 --room-id <room-id
 ```
 
 `agent config` writes only to the copied runtime directory for that agent. Template originals under `agent-templates/` are not modified during a meeting.
+
+Controller private chat commands:
+
+```bash
+uv run agent-room controller read --server http://127.0.0.1:8765 --room-id <room-id>
+uv run agent-room controller post --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <controller-id> --agent-name Controller --text "<message>"
+```
 
 ## Stop
 

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Agent Room</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260619-room-controls" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260619-single-room" />
   </head>
   <body>
     <main class="shell">
@@ -14,7 +14,6 @@
           <p id="tmuxHelp">tmux</p>
         </div>
         <div class="actions">
-          <select id="roomSelect"></select>
           <button id="refresh">Refresh</button>
           <button id="newRoom">New</button>
           <button id="closeRoom" class="danger">Close</button>
@@ -59,18 +58,32 @@
         </section>
 
         <aside class="sidebar">
-          <div class="sidebarHead">
-            <h2>Messages</h2>
-            <span id="activeRoom">No room</span>
-          </div>
-          <div id="messages" class="messages"></div>
-          <div class="composer">
-            <input id="messageText" placeholder="Message" />
-            <button id="sendMessage">Send</button>
-          </div>
+          <section class="chatPanel">
+            <div class="sidebarHead">
+              <h2>Messages</h2>
+              <span id="activeRoom">No room</span>
+            </div>
+            <div id="messages" class="messages"></div>
+            <div class="composer">
+              <input id="messageText" placeholder="Message" />
+              <button id="sendMessage">Send</button>
+            </div>
+          </section>
+
+          <section class="chatPanel">
+            <div class="sidebarHead">
+              <h2>Controller</h2>
+              <span>Private</span>
+            </div>
+            <div id="controllerMessages" class="messages"></div>
+            <div class="composer">
+              <input id="controllerText" placeholder="Whisper" />
+              <button id="sendControllerMessage">Send</button>
+            </div>
+          </section>
         </aside>
       </section>
     </main>
-    <script src="/static/app.js?v=20260619-room-controls"></script>
+    <script src="/static/app.js?v=20260619-single-room"></script>
   </body>
 </html>

@@ -30,6 +30,15 @@ uv run agent-room agent goal --server <server-url> --room-id <room-id> --agent-i
 uv run agent-room agent config --server <server-url> --room-id <room-id> --agent-id <target-agent-id> --actor-id <agent-id> --relative-path ".codex/config.toml" --content-file <file> --reason "<reason>"
 ```
 
+## Private Commands
+
+Use these commands for user whispers that should not appear in the public room log.
+
+```bash
+uv run agent-room controller read --server <server-url> --room-id <room-id>
+uv run agent-room controller post --server <server-url> --room-id <room-id> --agent-id <agent-id> --agent-name Controller --text "<message>"
+```
+
 ## Tmux Policy
 
 - The meeting app runs in one tmux window.

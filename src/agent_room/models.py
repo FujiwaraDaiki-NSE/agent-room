@@ -69,7 +69,7 @@ class Room(BaseModel):
     name: str
     goal: str
     termination: str
-    state: Literal["open", "done", "stopped"]
+    state: Literal["draft", "open", "done", "stopped"]
     created_at: str
     agents: list[AgentInstance]
 

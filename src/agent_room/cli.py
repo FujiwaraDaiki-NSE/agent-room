@@ -47,6 +47,21 @@ def main() -> None:
     done.add_argument("--agent-id", required=True)
     done.add_argument("--reason", required=True)
 
+    controller = subparsers.add_parser("controller")
+    controller_sub = controller.add_subparsers(dest="controller_command", required=True)
+
+    controller_read = controller_sub.add_parser("read")
+    add_server_args(controller_read)
+    controller_read.add_argument("--room-id", required=True)
+    controller_read.add_argument("--after-id", type=int)
+
+    controller_post = controller_sub.add_parser("post")
+    add_server_args(controller_post)
+    controller_post.add_argument("--room-id", required=True)
+    controller_post.add_argument("--agent-id", required=True)
+    controller_post.add_argument("--agent-name", required=True)
+    controller_post.add_argument("--text", required=True)
+
     agent = subparsers.add_parser("agent")
     agent_sub = agent.add_subparsers(dest="agent_command", required=True)
 
@@ -100,6 +115,10 @@ def main() -> None:
         handle_room(args)
         return
 
+    if args.command == "controller":
+        handle_controller(args)
+        return
+
     if args.command == "agent":
         handle_agent(args)
         return
@@ -131,6 +150,26 @@ def handle_room(args: argparse.Namespace) -> None:
         print_json(request("POST", f"{args.server}/api/rooms/{args.room_id}/agents/{args.agent_id}/done", payload))
         return
     raise SystemExit(f"unknown room command: {args.room_command}")
+
+
+def handle_controller(args: argparse.Namespace) -> None:
+    if args.controller_command == "read":
+        query = ""
+        if args.after_id is not None:
+            query = "?" + urllib.parse.urlencode({"after_id": args.after_id})
+        print_json(request("GET", f"{args.server}/api/rooms/{args.room_id}/controller/messages{query}"))
+        return
+    if args.controller_command == "post":
+        payload = {
+            "actor_type": "controller",
+            "actor_id": args.agent_id,
+            "actor_name": args.agent_name,
+            "text": args.text,
+            "kind": "message",
+        }
+        print_json(request("POST", f"{args.server}/api/rooms/{args.room_id}/controller/messages", payload))
+        return
+    raise SystemExit(f"unknown controller command: {args.controller_command}")
 
 
 def handle_agent(args: argparse.Namespace) -> None:

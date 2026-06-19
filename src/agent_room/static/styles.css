@@ -112,10 +112,6 @@ h2 {
   gap: 8px;
 }
 
-.actions select {
-  width: 220px;
-}
-
 .workspace {
   flex: 1;
   display: grid;
@@ -299,9 +295,19 @@ label {
 .sidebar {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   border-left: 1px solid var(--line);
   background: #fff;
+}
+
+.chatPanel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.chatPanel + .chatPanel {
+  border-top: 1px solid var(--line);
 }
 
 .sidebarHead {
@@ -348,6 +354,10 @@ label {
   font-size: 13px;
   line-height: 1.45;
   white-space: pre-wrap;
+}
+
+.privateMessage {
+  background: #f7fbfb;
 }
 
 .composer {

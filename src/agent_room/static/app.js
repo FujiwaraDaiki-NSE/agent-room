@@ -1,8 +1,8 @@
 const state = {
   templates: [],
-  rooms: [],
   room: null,
   messages: [],
+  controllerMessages: [],
   ws: null,
   bubbles: new Map(),
 };
@@ -23,14 +23,17 @@ async function api(path, options = {}) {
 
 async function boot() {
   $("refresh").addEventListener("click", refresh);
-  $("newRoom").addEventListener("click", newRoom);
+  $("newRoom").addEventListener("click", resetRoom);
   $("startRoom").addEventListener("click", startRoom);
   $("sendMessage").addEventListener("click", sendMessage);
+  $("sendControllerMessage").addEventListener("click", sendControllerMessage);
   $("deployAgent").addEventListener("click", deployAgent);
   $("closeRoom").addEventListener("click", closeRoom);
-  $("roomSelect").addEventListener("change", openSelectedRoom);
   $("messageText").addEventListener("keydown", (event) => {
     if (event.key === "Enter") sendMessage();
+  });
+  $("controllerText").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") sendControllerMessage();
   });
   await refresh();
 }
@@ -43,41 +46,33 @@ async function refresh() {
   $("tmuxHelp").textContent = tmux.inside_tmux
     ? `${tmux.attach_command} | window: ${tmux.window}`
     : "start inside tmux";
-  state.rooms = await api("/api/rooms");
-  renderRoomSelect();
-  if (state.room) {
-    const current = state.rooms.find((room) => room.id === state.room.id);
-    if (!current) newRoom();
+  const rooms = await api("/api/rooms");
+  const room = rooms[0];
+  if (room) {
+    const shouldConnect = !state.room || state.room.id !== room.id;
+    state.room = room;
+    if (shouldConnect) connectRoom();
   }
   await loadRoom();
 }
 
-function newRoom() {
-  if (state.ws) {
-    state.ws.close();
-    state.ws = null;
-  }
-  state.room = null;
+async function resetRoom() {
+  state.room = await api("/api/rooms/reset", {
+    method: "POST",
+    body: JSON.stringify({
+      actor_id: "user",
+      reason: "user requested new room",
+      force: false,
+    }),
+  });
   state.messages = [];
+  state.controllerMessages = [];
   state.bubbles.clear();
   $("roomName").value = "";
   $("goal").value = "";
   $("termination").value = "";
-  renderRoomSelect();
-  renderRoom();
-}
-
-async function openSelectedRoom() {
-  const roomId = $("roomSelect").value;
-  if (!roomId) {
-    newRoom();
-    return;
-  }
-  state.room = state.rooms.find((room) => room.id === roomId);
-  if (state.room) {
-    connectRoom();
-    await loadRoom();
-  }
+  connectRoom();
+  await loadRoom();
 }
 
 async function startRoom() {
@@ -89,7 +84,6 @@ async function startRoom() {
     templates: selected,
   };
   state.room = await api("/api/rooms", { method: "POST", body: JSON.stringify(payload) });
-  state.rooms = await api("/api/rooms");
   connectRoom();
   await loadRoom();
 }
@@ -101,6 +95,7 @@ async function loadRoom() {
   }
   state.room = await api(`/api/rooms/${state.room.id}`);
   state.messages = await api(`/api/rooms/${state.room.id}/messages`);
+  state.controllerMessages = await api(`/api/rooms/${state.room.id}/controller/messages`);
   renderRoom();
 }
 
@@ -114,6 +109,17 @@ function connectRoom() {
       state.messages.push(payload.message);
       showBubble(payload.message);
     }
+    if (payload.controller_message) {
+      state.controllerMessages.push(payload.controller_message);
+    }
+    if (payload.type === "room.reset" && payload.room) {
+      state.room = payload.room;
+      state.messages = [];
+      state.controllerMessages = [];
+      connectRoom();
+      await loadRoom();
+      return;
+    }
     if (payload.room) state.room = payload.room;
     renderRoom();
   };
@@ -125,6 +131,23 @@ async function sendMessage() {
   if (!text.trim()) return;
   $("messageText").value = "";
   await api(`/api/rooms/${state.room.id}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      actor_type: "user",
+      actor_id: "user",
+      actor_name: "User",
+      text,
+      kind: "message",
+    }),
+  });
+}
+
+async function sendControllerMessage() {
+  if (!state.room) return;
+  const text = $("controllerText").value;
+  if (!text.trim()) return;
+  $("controllerText").value = "";
+  await api(`/api/rooms/${state.room.id}/controller/messages`, {
     method: "POST",
     body: JSON.stringify({
       actor_type: "user",
@@ -158,8 +181,7 @@ async function closeRoom() {
       force: false,
     }),
   });
-  state.rooms = await api("/api/rooms");
-  newRoom();
+  await loadRoom();
 }
 
 function renderTemplates() {
@@ -173,7 +195,7 @@ function renderTemplates() {
             <strong>${escapeHtml(template.name)}</strong>
             <span>${escapeHtml(template.personality)}</span>
           </span>
-          <input data-template-check type="checkbox" value="${template.id}" ${template.scope === "controller" ? "checked" : ""} />
+          <input data-template-check type="checkbox" value="${template.id}" ${template.scope === "controller" ? "checked disabled" : ""} />
         </label>
       `,
     )
@@ -187,23 +209,13 @@ function renderDeploy() {
     .join("");
 }
 
-function renderRoomSelect() {
-  const options = ['<option value="">New room</option>'].concat(
-    state.rooms.map((room) => {
-      const label = `${room.name} / ${room.state}`;
-      const selected = state.room && room.id === state.room.id ? "selected" : "";
-      return `<option value="${room.id}" ${selected}>${escapeHtml(label)}</option>`;
-    }),
-  );
-  $("roomSelect").innerHTML = options.join("");
-}
-
 function renderRoom() {
   const room = state.room;
   $("activeRoom").textContent = room ? room.name : "No room";
   $("roomState").textContent = room ? room.state : "Idle";
   renderAgents(room ? room.agents : []);
   renderMessages();
+  renderControllerMessages();
 }
 
 function renderAgents(agents) {
@@ -237,6 +249,24 @@ function renderMessages() {
     .map(
       (message) => `
         <article class="message">
+          <div class="messageMeta">
+            <strong>${escapeHtml(message.actor_name)}</strong>
+            <span>#${message.id}</span>
+          </div>
+          <div class="messageText">${escapeHtml(message.text)}</div>
+        </article>
+      `,
+    )
+    .join("");
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function renderControllerMessages() {
+  const messages = $("controllerMessages");
+  messages.innerHTML = state.controllerMessages
+    .map(
+      (message) => `
+        <article class="message privateMessage">
           <div class="messageMeta">
             <strong>${escapeHtml(message.actor_name)}</strong>
             <span>#${message.id}</span>

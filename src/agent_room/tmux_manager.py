@@ -97,27 +97,37 @@ class TmuxManager:
         server_url = os.environ.get("AGENT_ROOM_SERVER_URL")
         if not server_url:
             raise TmuxError("AGENT_ROOM_SERVER_URL is required")
-        return "\n".join(
-            [
-                "/goal",
-                f"Room: {room.id}",
-                f"Agent: {instance_id}",
-                f"Role: {template.name}",
-                "",
-                "Goal:",
-                goal,
-                "",
-                "Termination:",
-                termination,
-                "",
-                "Room commands:",
-                f"- Read: uv run agent-room room read --server {server_url} --room-id {room.id}",
-                f"- Post: uv run agent-room room post --server {server_url} --room-id {room.id} --agent-id {instance_id} --agent-name {shlex.quote(template.name)} --text '<message>'",
-                f"- Done: uv run agent-room room done --server {server_url} --room-id {room.id} --agent-id {instance_id} --reason '<reason>'",
-                "",
-                "Speak to the meeting only through the room commands.",
-            ]
-        )
+        lines = [
+            "/goal",
+            f"Room: {room.id}",
+            f"Agent: {instance_id}",
+            f"Role: {template.name}",
+            "",
+            "Goal:",
+            goal,
+            "",
+            "Termination:",
+            termination,
+            "",
+            "Room commands:",
+            f"- Read: uv run agent-room room read --server {server_url} --room-id {room.id}",
+            f"- Post: uv run agent-room room post --server {server_url} --room-id {room.id} --agent-id {instance_id} --agent-name {shlex.quote(template.name)} --text '<message>'",
+            f"- Done: uv run agent-room room done --server {server_url} --room-id {room.id} --agent-id {instance_id} --reason '<reason>'",
+            "",
+            "Speak to the meeting only through the room commands.",
+        ]
+        if template.scope == "controller":
+            lines.extend(
+                [
+                    "",
+                    "Controller private commands:",
+                    f"- Read private: uv run agent-room controller read --server {server_url} --room-id {room.id}",
+                    f"- Reply private: uv run agent-room controller post --server {server_url} --room-id {room.id} --agent-id {instance_id} --agent-name {shlex.quote(template.name)} --text '<message>'",
+                    "",
+                    "Use the private commands for user-side whispers that should not go to the public room log.",
+                ]
+            )
+        return "\n".join(lines)
 
     def _agent_command(self, runtime_dir: Path, prompt_path: Path) -> str:
         runtime = shlex.quote(str(runtime_dir))

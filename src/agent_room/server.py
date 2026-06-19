@@ -83,6 +83,8 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
     @app.post("/api/rooms")
     async def create_room(request: CreateRoomRequest) -> dict[str, Any]:
         try:
+            current = store.current_room()
+            _stop_active_agents(current.id, "user", "room restart", False)
             room = store.create_room(request.name, request.goal, request.termination)
             store.add_message(room.id, "user", "user", "User", request.goal, "goal")
             for template_id in request.templates:
@@ -91,6 +93,17 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             await hub.broadcast(room.id, {"type": "room.created", "room": room.model_dump()})
             return room.model_dump()
         except (ValueError, TemplateError, TmuxError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/reset")
+    async def reset_room(request: StopAgentRequest) -> dict[str, Any]:
+        try:
+            current = store.current_room()
+            _stop_active_agents(current.id, request.actor_id, request.reason, request.force)
+            room = store.reset_room()
+            await hub.broadcast(current.id, {"type": "room.reset", "room": room.model_dump()})
+            return room.model_dump()
+        except (KeyError, TmuxError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/rooms/{room_id}")
@@ -119,6 +132,28 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
                 request.kind,
             )
             await hub.broadcast(room_id, {"type": "message.created", "message": message.model_dump()})
+            return message.model_dump()
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/rooms/{room_id}/controller/messages")
+    def list_controller_messages(room_id: str, after_id: int | None = None) -> list[dict[str, Any]]:
+        try:
+            return [message.model_dump() for message in store.list_controller_messages(room_id, after_id)]
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/controller/messages")
+    async def post_controller_message(room_id: str, request: PostMessageRequest) -> dict[str, Any]:
+        try:
+            message = store.add_controller_message(
+                room_id,
+                request.actor_type,
+                request.actor_id,
+                request.actor_name,
+                request.text,
+            )
+            await hub.broadcast(room_id, {"type": "controller.message.created", "controller_message": message.model_dump()})
             return message.model_dump()
         except (ValueError, KeyError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -265,5 +300,18 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             agent = tmux.deploy(room, template, template_dir, actor_id, room.goal, room.termination)
             room = store.add_agent(room_id, agent, actor_id)
         return room
+
+    def _stop_active_agents(room_id: str, actor_id: str, reason: str, force: bool) -> None:
+        room = store.get_room(room_id)
+        for agent in room.agents:
+            if agent.pane_id and agent.state not in {"stopped", "done"}:
+                tmux.stop(agent, force)
+                store.update_agent(
+                    room_id,
+                    agent.id,
+                    {"state": "stopped", "pane_id": None, "reason": reason},
+                    actor_id,
+                    "agent.stopped",
+                )
 
     return app
