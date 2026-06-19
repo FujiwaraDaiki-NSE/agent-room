@@ -280,12 +280,15 @@ function renderMessages() {
   messages.innerHTML = state.messages
     .map(
       (message) => `
-        <article class="message">
-          <div class="messageMeta">
-            <strong>${escapeHtml(message.actor_name)}</strong>
-            <span>#${message.id}</span>
+        <article class="message ${messageClass(message)}">
+          ${messageAvatar(message)}
+          <div class="messageBody">
+            <div class="messageMeta">
+              <strong>${escapeHtml(message.actor_name)}</strong>
+              <span>#${message.id}</span>
+            </div>
+            <div class="messageText">${escapeHtml(message.text)}</div>
           </div>
-          <div class="messageText">${escapeHtml(message.text)}</div>
         </article>
       `,
     )
@@ -298,12 +301,15 @@ function renderControllerMessages() {
   messages.innerHTML = state.controllerMessages
     .map(
       (message) => `
-        <article class="message privateMessage">
-          <div class="messageMeta">
-            <strong>${escapeHtml(message.actor_name)}</strong>
-            <span>#${message.id}</span>
+        <article class="message privateMessage ${messageClass(message)}">
+          ${messageAvatar(message)}
+          <div class="messageBody">
+            <div class="messageMeta">
+              <strong>${escapeHtml(message.actor_name)}</strong>
+              <span>#${message.id}</span>
+            </div>
+            <div class="messageText">${escapeHtml(message.text)}</div>
           </div>
-          <div class="messageText">${escapeHtml(message.text)}</div>
         </article>
       `,
     )
@@ -318,6 +324,47 @@ function showBubble(message) {
     state.bubbles.delete(message.actor_id);
     renderRoom();
   }, 7000);
+}
+
+function messageClass(message) {
+  if (message.actor_type === "user") return "userMessage";
+  if (message.actor_type === "controller") return "controllerMessage";
+  if (message.actor_type === "system") return "systemMessage";
+  return "agentMessage";
+}
+
+function messageAvatar(message) {
+  const agent = state.room ? state.room.agents.find((item) => item.id === message.actor_id) : null;
+  const accent = safeColor(agent ? agent.accent : actorAccent(message.actor_type));
+  if (agent && agent.avatar_url) {
+    return `
+      <div class="messageAvatar" style="--accent:${accent}">
+        <img src="${escapeHtml(agent.avatar_url)}" alt="" />
+      </div>
+    `;
+  }
+  return `<div class="messageAvatar" style="--accent:${accent}">${escapeHtml(initials(message.actor_name))}</div>`;
+}
+
+function actorAccent(actorType) {
+  if (actorType === "user") return "#136F63";
+  if (actorType === "controller") return "#254D70";
+  if (actorType === "system") return "#607080";
+  return "#48515A";
+}
+
+function initials(name) {
+  return String(name || "?")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
+
+function safeColor(value) {
+  return /^#[0-9a-fA-F]{6}$/.test(String(value)) ? value : "#607080";
 }
 
 function escapeHtml(value) {

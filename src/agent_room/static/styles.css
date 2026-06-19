@@ -14,9 +14,15 @@
   box-sizing: border-box;
 }
 
+html {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100%;
+  overflow: hidden;
   color: var(--ink);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -84,12 +90,14 @@ h2 {
 }
 
 .shell {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .masthead {
+  flex: 0 0 auto;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -157,10 +165,12 @@ h2 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .stage {
   min-height: 0;
+  overflow: hidden;
   display: grid;
   grid-template-columns: 320px minmax(380px, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
@@ -314,6 +324,7 @@ label {
 
 .bubble {
   max-width: 180px;
+  max-height: 72px;
   min-height: 28px;
   padding: 7px 9px;
   border: 1px solid var(--line);
@@ -323,6 +334,12 @@ label {
   color: var(--ink);
   font-size: 12px;
   line-height: 1.35;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  z-index: 5;
 }
 
 .deployBar {
@@ -334,6 +351,7 @@ label {
 
 .sidebar {
   min-height: 0;
+  overflow: hidden;
   display: grid;
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   border-left: 1px solid var(--line);
@@ -367,6 +385,7 @@ label {
 .messages {
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -375,29 +394,82 @@ label {
 
 .message {
   display: grid;
-  gap: 4px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  min-width: 0;
   padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfd;
 }
 
+.messageAvatar {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  color: #fff;
+  background: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.messageAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.messageBody {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
 .messageMeta {
   display: flex;
+  min-width: 0;
   justify-content: space-between;
   gap: 8px;
   color: var(--muted);
   font-size: 11px;
 }
 
+.messageMeta strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.messageMeta span {
+  flex: 0 0 auto;
+}
+
 .messageText {
+  min-width: 0;
   font-size: 13px;
   line-height: 1.45;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .privateMessage {
   background: #f7fbfb;
+}
+
+.userMessage {
+  background: #f7fbf8;
+}
+
+.controllerMessage {
+  background: #f7f9fc;
 }
 
 .composer {
@@ -415,6 +487,7 @@ label {
 
   .workspace {
     grid-template-columns: 1fr;
+    overflow: auto;
   }
 
   .stage {
