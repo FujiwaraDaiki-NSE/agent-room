@@ -7,6 +7,11 @@ const state = {
   bubbles: new Map(),
 };
 
+const TERMINATION_TEMPLATE = {
+  controller: "controllerを除く多数が同意したら。",
+  agent: "controllerが終了と判断したら。",
+};
+
 const $ = (id) => document.getElementById(id);
 
 async function api(path, options = {}) {
@@ -69,8 +74,7 @@ async function resetRoom() {
   state.controllerMessages = [];
   state.bubbles.clear();
   $("goal").value = "";
-  $("controllerTermination").value = "";
-  $("agentTermination").value = "";
+  setTerminationTemplate();
   connectRoom();
   await loadRoom();
 }
@@ -106,8 +110,17 @@ async function loadRoom() {
 function syncRoomForm() {
   if (!state.room || state.room.state !== "draft") return;
   $("goal").value = state.room.goal;
-  $("controllerTermination").value = state.room.controller_termination;
-  $("agentTermination").value = state.room.agent_termination;
+  if (state.room.controller_termination || state.room.agent_termination) {
+    $("controllerTermination").value = state.room.controller_termination;
+    $("agentTermination").value = state.room.agent_termination;
+    return;
+  }
+  setTerminationTemplate();
+}
+
+function setTerminationTemplate() {
+  $("controllerTermination").value = TERMINATION_TEMPLATE.controller;
+  $("agentTermination").value = TERMINATION_TEMPLATE.agent;
 }
 
 function requireStartInputs() {
