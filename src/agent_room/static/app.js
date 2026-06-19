@@ -8,8 +8,10 @@ const state = {
 };
 
 const TERMINATION_TEMPLATE = {
-  controller: "controllerを除く多数が同意したら。",
-  agent: "controllerが終了と判断したら。",
+  controller:
+    "controllerがdecision phaseに入り、controllerを除く多数が同意し、最低3ラウンド以上の討論を行い、各agentが少なくとも1回は反論・留保・代替仮説のいずれかを提示し、meeting-state.md上で未解決の重要論点がないとcontrollerが判断したら。",
+  agent:
+    "controllerが終了と判断するまでdoneしない。各agentは最低1回、反論・留保・代替仮説・追加調査観点のいずれかを提示してから終了可能とする。",
 };
 
 const $ = (id) => document.getElementById(id);
