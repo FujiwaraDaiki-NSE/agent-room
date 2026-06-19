@@ -163,7 +163,7 @@ h2 {
 .workspace {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-columns: minmax(0, 1fr) 480px;
   min-height: 0;
   overflow: hidden;
 }
@@ -323,21 +323,20 @@ label {
 }
 
 .bubble {
-  max-width: min(320px, 42vw);
-  max-height: min(220px, 28vh);
+  width: max-content;
+  max-width: min(520px, 56vw);
   min-height: 28px;
-  padding: 7px 9px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 8px 18px rgba(31, 41, 51, 0.14);
   color: var(--ink);
-  font-size: 12px;
-  line-height: 1.35;
-  overflow: auto;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow: visible;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  scrollbar-width: thin;
   z-index: 5;
 }
 
@@ -394,19 +393,19 @@ label {
 .message {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 42px minmax(0, 1fr);
   align-items: start;
-  gap: 9px;
+  gap: 11px;
   min-width: 0;
-  padding: 9px 10px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfd;
 }
 
 .messageAvatar {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -414,7 +413,7 @@ label {
   border-radius: 50%;
   color: #fff;
   background: var(--accent);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1;
 }
@@ -454,8 +453,8 @@ label {
 .messageText {
   min-width: 0;
   max-height: none;
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.55;
   white-space: pre-wrap;
   overflow: visible;
   overflow-wrap: anywhere;
