@@ -319,7 +319,7 @@ function renderControllerMessages() {
 
 function showBubble(message) {
   if (message.actor_type === "system") return;
-  state.bubbles.set(message.actor_id, message.text.slice(0, 120));
+  state.bubbles.set(message.actor_id, message.text);
   setTimeout(() => {
     state.bubbles.delete(message.actor_id);
     renderRoom();

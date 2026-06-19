@@ -323,8 +323,8 @@ label {
 }
 
 .bubble {
-  max-width: 180px;
-  max-height: 72px;
+  max-width: min(320px, 42vw);
+  max-height: min(220px, 28vh);
   min-height: 28px;
   padding: 7px 9px;
   border: 1px solid var(--line);
@@ -334,11 +334,10 @@ label {
   color: var(--ink);
   font-size: 12px;
   line-height: 1.35;
-  overflow: hidden;
+  overflow: auto;
   overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  white-space: pre-wrap;
+  scrollbar-width: thin;
   z-index: 5;
 }
 
@@ -393,6 +392,7 @@ label {
 }
 
 .message {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   align-items: start;
@@ -453,9 +453,11 @@ label {
 
 .messageText {
   min-width: 0;
+  max-height: none;
   font-size: 13px;
   line-height: 1.45;
   white-space: pre-wrap;
+  overflow: visible;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
