@@ -87,6 +87,16 @@ This keeps personality and agent config isolated without forcing each pane to lo
 7. Agents read and post through the room commands.
 8. The controller marks the room done or stops agent panes.
 
+## Room Controls
+
+- `New`: Clear the current view and prepare a new room.
+- `Start`: Create a room from the form and deploy the selected templates.
+- Room select: Open a saved room and its message history.
+- `Close`: Stop the current room and close only its agent panes.
+- `Refresh`: Reload templates, rooms, messages, and tmux status.
+
+Messages are room history. They are not deleted when a room is closed. Use `New` to clear the current view, or pick another room from the room select.
+
 ## Agent Commands
 
 Agents receive commands in their `/goal` prompt. The command shape is:

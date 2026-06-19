@@ -1,5 +1,6 @@
 const state = {
   templates: [],
+  rooms: [],
   room: null,
   messages: [],
   ws: null,
@@ -22,10 +23,12 @@ async function api(path, options = {}) {
 
 async function boot() {
   $("refresh").addEventListener("click", refresh);
+  $("newRoom").addEventListener("click", newRoom);
   $("startRoom").addEventListener("click", startRoom);
   $("sendMessage").addEventListener("click", sendMessage);
   $("deployAgent").addEventListener("click", deployAgent);
-  $("stopRoom").addEventListener("click", stopRoom);
+  $("closeRoom").addEventListener("click", closeRoom);
+  $("roomSelect").addEventListener("change", openSelectedRoom);
   $("messageText").addEventListener("keydown", (event) => {
     if (event.key === "Enter") sendMessage();
   });
@@ -40,12 +43,41 @@ async function refresh() {
   $("tmuxHelp").textContent = tmux.inside_tmux
     ? `${tmux.attach_command} | window: ${tmux.window}`
     : "start inside tmux";
-  const rooms = await api("/api/rooms");
-  if (!state.room && rooms.length > 0) {
-    state.room = rooms[rooms.length - 1];
-    connectRoom();
+  state.rooms = await api("/api/rooms");
+  renderRoomSelect();
+  if (state.room) {
+    const current = state.rooms.find((room) => room.id === state.room.id);
+    if (!current) newRoom();
   }
   await loadRoom();
+}
+
+function newRoom() {
+  if (state.ws) {
+    state.ws.close();
+    state.ws = null;
+  }
+  state.room = null;
+  state.messages = [];
+  state.bubbles.clear();
+  $("roomName").value = "";
+  $("goal").value = "";
+  $("termination").value = "";
+  renderRoomSelect();
+  renderRoom();
+}
+
+async function openSelectedRoom() {
+  const roomId = $("roomSelect").value;
+  if (!roomId) {
+    newRoom();
+    return;
+  }
+  state.room = state.rooms.find((room) => room.id === roomId);
+  if (state.room) {
+    connectRoom();
+    await loadRoom();
+  }
 }
 
 async function startRoom() {
@@ -57,6 +89,7 @@ async function startRoom() {
     templates: selected,
   };
   state.room = await api("/api/rooms", { method: "POST", body: JSON.stringify(payload) });
+  state.rooms = await api("/api/rooms");
   connectRoom();
   await loadRoom();
 }
@@ -115,7 +148,7 @@ async function deployAgent() {
   });
 }
 
-async function stopRoom() {
+async function closeRoom() {
   if (!state.room) return;
   await api(`/api/rooms/${state.room.id}/stop`, {
     method: "POST",
@@ -125,6 +158,8 @@ async function stopRoom() {
       force: false,
     }),
   });
+  state.rooms = await api("/api/rooms");
+  newRoom();
 }
 
 function renderTemplates() {
@@ -150,6 +185,17 @@ function renderDeploy() {
     .filter((template) => template.launch)
     .map((template) => `<option value="${template.id}">${escapeHtml(template.name)}</option>`)
     .join("");
+}
+
+function renderRoomSelect() {
+  const options = ['<option value="">New room</option>'].concat(
+    state.rooms.map((room) => {
+      const label = `${room.name} / ${room.state}`;
+      const selected = state.room && room.id === state.room.id ? "selected" : "";
+      return `<option value="${room.id}" ${selected}>${escapeHtml(label)}</option>`;
+    }),
+  );
+  $("roomSelect").innerHTML = options.join("");
 }
 
 function renderRoom() {
