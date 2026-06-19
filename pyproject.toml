@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115.0",
+  "fastmcp>=3.4.2",
   "uvicorn[standard]>=0.30.0",
 ]
 
@@ -16,6 +17,7 @@ agent-room = "agent_room.cli:main"
 dev = [
   "httpx>=0.27.0",
   "pytest>=8.3.0",
+  "pytest-asyncio>=1.4.0",
 ]
 
 [build-system]

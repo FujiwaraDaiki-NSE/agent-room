@@ -12,6 +12,7 @@ from typing import Any
 
 import uvicorn
 
+from .mcp_server import create_agent_room_mcp, request as mcp_request
 from .server import create_app
 
 
@@ -25,6 +26,13 @@ def main() -> None:
     serve.add_argument("--data-dir", required=True)
     serve.add_argument("--project-root", required=True)
     serve.add_argument("--codex-auth-file", required=True)
+
+    mcp = subparsers.add_parser("mcp")
+    add_server_args(mcp)
+    mcp.add_argument("--room-id", required=True)
+    mcp.add_argument("--agent-id", required=True)
+    mcp.add_argument("--agent-name", required=True)
+    mcp.add_argument("--controller", action="store_true")
 
     room = subparsers.add_parser("room")
     room_sub = room.add_subparsers(dest="room_command", required=True)
@@ -112,6 +120,10 @@ def main() -> None:
         uvicorn.run(app, host=args.host, port=args.port)
         return
 
+    if args.command == "mcp":
+        handle_mcp(args)
+        return
+
     if args.command == "room":
         handle_room(args)
         return
@@ -127,6 +139,18 @@ def main() -> None:
 
 def add_server_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--server", required=True)
+
+
+def handle_mcp(args: argparse.Namespace) -> None:
+    mcp = create_agent_room_mcp(
+        server_url=args.server,
+        room_id=args.room_id,
+        agent_id=args.agent_id,
+        agent_name=args.agent_name,
+        is_controller=args.controller,
+        request_fn=mcp_request,
+    )
+    mcp.run()
 
 
 def handle_room(args: argparse.Namespace) -> None:

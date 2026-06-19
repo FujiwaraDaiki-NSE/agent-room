@@ -54,6 +54,7 @@ class TmuxManager:
             raise TmuxError(f"runtime directory already exists: {runtime_dir}")
         shutil.copytree(template_dir, runtime_dir)
         self._trust_project(runtime_dir)
+        self._configure_mcp(runtime_dir, room, template, instance_id)
         self._link_shared_auth(runtime_dir)
         prompt_path = runtime_dir / "room-goal.md"
         prompt_path.write_text(
@@ -128,22 +129,27 @@ class TmuxManager:
             f"Role: {template.name}",
             "",
             *goal_lines[1:],
-            "Room commands:",
-            f"- Read: uv run agent-room room read --server {server_url} --room-id {room.id}",
-            f"- Post: uv run agent-room room post --server {server_url} --room-id {room.id} --agent-id {instance_id} --agent-name {shlex.quote(template.name)} --text '<message>'",
-            f"- Done: uv run agent-room room done --server {server_url} --room-id {room.id} --agent-id {instance_id} --reason '<reason>'",
+            "MCP tools:",
+            "- room_read: read public room messages",
+            "- room_post: post a public room message",
+            "- room_done: mark yourself done",
             "",
-            "Speak to the meeting only through the room commands.",
+            "Speak to the meeting only through the Agent Room MCP tools.",
+            "Do not call the Agent Room HTTP API or CLI commands directly.",
         ]
         if template.scope == "controller":
             lines.extend(
                 [
                     "",
-                    "Controller private commands:",
-                    f"- Read private: uv run agent-room controller read --server {server_url} --room-id {room.id}",
-                    f"- Reply private: uv run agent-room controller post --server {server_url} --room-id {room.id} --agent-id {instance_id} --agent-name {shlex.quote(template.name)} --text '<message>'",
+                    "Controller MCP tools:",
+                    "- controller_read: read private controller messages",
+                    "- controller_post: post a private controller message",
+                    "- agent_deploy: deploy agents",
+                    "- agent_stop: stop an agent pane",
+                    "- agent_goal: send a new goal to an agent",
+                    "- agent_config: update an agent runtime config",
                     "",
-                    "Use the private commands for user-side whispers that should not go to the public room log.",
+                    "Use controller tools for user-side whispers and lifecycle operations.",
                 ]
             )
         return "\n".join(lines)
@@ -237,6 +243,58 @@ class TmuxManager:
             text.rstrip() + f"\n\n{project_table}\ntrust_level = \"trusted\"\n",
             encoding="utf-8",
         )
+
+    def _configure_mcp(
+        self,
+        runtime_dir: Path,
+        room: Room,
+        template: AgentTemplate,
+        instance_id: str,
+    ) -> None:
+        server_url = os.environ.get("AGENT_ROOM_SERVER_URL")
+        if not server_url:
+            raise TmuxError("AGENT_ROOM_SERVER_URL is required")
+        config_path = runtime_dir / ".codex" / "config.toml"
+        if not config_path.is_file():
+            raise TmuxError(f"runtime config file not found: {config_path}")
+        args = [
+            "run",
+            "agent-room",
+            "mcp",
+            "--server",
+            server_url,
+            "--room-id",
+            room.id,
+            "--agent-id",
+            instance_id,
+            "--agent-name",
+            template.name,
+        ]
+        tools = ["room_read", "room_post", "room_done"]
+        if template.scope == "controller":
+            args.append("--controller")
+            tools.extend(
+                [
+                    "controller_read",
+                    "controller_post",
+                    "agent_deploy",
+                    "agent_stop",
+                    "agent_goal",
+                    "agent_config",
+                ]
+            )
+        mcp_config = [
+            '[mcp_servers.agent_room]',
+            'command = "uv"',
+            f"args = {json.dumps(args, ensure_ascii=False)}",
+            f"cwd = {json.dumps(str(self.project_root))}",
+            'default_tools_approval_mode = "approve"',
+            "startup_timeout_sec = 20",
+            "tool_timeout_sec = 60",
+            f"enabled_tools = {json.dumps(tools)}",
+        ]
+        text = config_path.read_text(encoding="utf-8").rstrip()
+        config_path.write_text(text + "\n\n" + "\n".join(mcp_config) + "\n", encoding="utf-8")
 
     def _split_pane(self, command: str) -> str:
         target = os.environ["TMUX_PANE"]

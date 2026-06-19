@@ -87,7 +87,7 @@ This keeps personality and agent config isolated without forcing each pane to lo
 5. Press `Start`.
 6. The app creates one tmux pane per selected agent. `Controller` is always included.
 7. Each Codex TUI starts with `/goal`.
-8. Agents read and post through the room commands.
+8. Agents read and post through the Agent Room MCP tools.
 9. The controller marks the room done or stops agent panes.
 
 ## Room Controls
@@ -103,32 +103,32 @@ After `Start`, the top brief keeps `Goal`, `Controller Termination`, and `Agent 
 
 The `Controller` panel is private. Use it for instructions or whispers that should go only to the controller.
 
-## Agent Commands
+## Agent MCP Tools
 
-Agents receive commands in their `/goal` prompt. The command shape is:
+Each runtime agent gets a stdio MCP server in `.codex/config.toml`.
+Regular agents receive these tools:
 
-```bash
-uv run agent-room room read --server http://127.0.0.1:8765 --room-id <room-id>
-uv run agent-room room post --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <agent-id> --agent-name <agent-name> --text "<message>"
-uv run agent-room room done --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <agent-id> --reason "<reason>"
-```
+- `room_read`
+- `room_post`
+- `room_done`
 
-Controller-only lifecycle commands:
+Controller agents also receive:
 
-```bash
-uv run agent-room agent deploy --server http://127.0.0.1:8765 --room-id <room-id> --template-id <template-id> --count 1 --actor-id <controller-id>
-uv run agent-room agent stop --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <target-agent-id> --actor-id <controller-id> --reason "<reason>" --graceful
-uv run agent-room agent goal --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <target-agent-id> --actor-id <controller-id> --goal "<goal>" --controller-termination "<controller termination>" --agent-termination "<agent termination>"
-uv run agent-room agent config --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <target-agent-id> --actor-id <controller-id> --relative-path ".codex/config.toml" --content-file ./new-config.toml --reason "<reason>"
-```
+- `controller_read`
+- `controller_post`
+- `agent_deploy`
+- `agent_stop`
+- `agent_goal`
+- `agent_config`
 
 `agent config` writes only to the copied runtime directory for that agent. Template originals under `agent-templates/` are not modified during a meeting.
 
-Controller private chat commands:
+The older CLI commands remain available for manual debugging, but deployed agents are instructed to use MCP tools instead of direct HTTP or CLI calls.
+
+Manual MCP server run:
 
 ```bash
-uv run agent-room controller read --server http://127.0.0.1:8765 --room-id <room-id>
-uv run agent-room controller post --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <controller-id> --agent-name Controller --text "<message>"
+uv run agent-room mcp --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <agent-id> --agent-name <agent-name>
 ```
 
 ## Stop
