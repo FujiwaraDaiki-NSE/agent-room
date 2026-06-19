@@ -68,7 +68,6 @@ async function resetRoom() {
   state.messages = [];
   state.controllerMessages = [];
   state.bubbles.clear();
-  $("roomName").value = state.room.name;
   $("goal").value = "";
   $("termination").value = "";
   connectRoom();
@@ -80,7 +79,7 @@ async function startRoom() {
   if (!selected.includes("controller")) selected.unshift("controller");
   if (!requireStartInputs()) return;
   const payload = {
-    name: $("roomName").value.trim(),
+    name: state.room.name,
     goal: $("goal").value.trim(),
     termination: $("termination").value.trim(),
     templates: selected,
@@ -104,14 +103,13 @@ async function loadRoom() {
 
 function syncRoomForm() {
   if (!state.room || state.room.state !== "draft") return;
-  $("roomName").value = state.room.name;
   $("goal").value = state.room.goal;
   $("termination").value = state.room.termination;
 }
 
 function requireStartInputs() {
   const missing = [];
-  if (!$("roomName").value.trim()) missing.push("Room");
+  if (!state.room) missing.push("Room state");
   if (!$("goal").value.trim()) missing.push("Goal");
   if (!$("termination").value.trim()) missing.push("Termination");
   if (missing.length > 0) {

@@ -96,6 +96,7 @@ This keeps personality and agent config isolated without forcing each pane to lo
 - `Refresh`: Reload templates, the current room, messages, and tmux status.
 
 The app keeps only one current room. Use `New` to clear the public log and controller private log by replacing the room.
+The room name is internal and hidden in the GUI.
 
 The `Controller` panel is private. Use it for instructions or whispers that should go only to the controller.
 
