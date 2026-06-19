@@ -84,7 +84,7 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
     async def create_room(request: CreateRoomRequest) -> dict[str, Any]:
         try:
             current = store.current_room()
-            _stop_active_agents(current.id, "user", "room restart", False)
+            _stop_room_panes(current.id, "user", "room restart", False, False)
             room = store.create_room(
                 request.name,
                 request.goal,
@@ -104,7 +104,7 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
     async def reset_room(request: StopAgentRequest) -> dict[str, Any]:
         try:
             current = store.current_room()
-            _stop_active_agents(current.id, request.actor_id, request.reason, request.force)
+            _stop_room_panes(current.id, request.actor_id, request.reason, request.force, False)
             room = store.reset_room()
             await hub.broadcast(current.id, {"type": "room.reset", "room": room.model_dump()})
             return room.model_dump()
@@ -158,7 +158,17 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
                 request.actor_name,
                 request.text,
             )
+            extra_messages = []
+            if request.actor_type == "user":
+                notice = _notify_controller_whisper(room_id, request.text)
+                if notice:
+                    extra_messages.append(notice)
             await hub.broadcast(room_id, {"type": "controller.message.created", "controller_message": message.model_dump()})
+            for extra_message in extra_messages:
+                await hub.broadcast(
+                    room_id,
+                    {"type": "controller.message.created", "controller_message": extra_message.model_dump()},
+                )
             return message.model_dump()
         except (ValueError, KeyError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -274,26 +284,17 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
     @app.post("/api/rooms/{room_id}/done")
     async def mark_room_done(room_id: str, request: MarkDoneRequest) -> dict[str, Any]:
         try:
+            _stop_room_panes(room_id, request.actor_id, request.reason, False, True)
             room = store.set_room_state(room_id, "done", request.actor_id, request.reason)
             await hub.broadcast(room_id, {"type": "room.done", "room": room.model_dump()})
             return room.model_dump()
-        except KeyError as exc:
+        except (KeyError, TmuxError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/rooms/{room_id}/stop")
     async def stop_room(room_id: str, request: StopAgentRequest) -> dict[str, Any]:
         try:
-            room = store.get_room(room_id)
-            for agent in room.agents:
-                if agent.pane_id and agent.state not in {"stopped", "done"}:
-                    tmux.stop(agent, request.force)
-                    store.update_agent(
-                        room_id,
-                        agent.id,
-                        {"state": "stopped", "pane_id": None, "reason": request.reason},
-                        request.actor_id,
-                        "agent.stopped",
-                    )
+            _stop_room_panes(room_id, request.actor_id, request.reason, request.force, False)
             room = store.set_room_state(room_id, "stopped", request.actor_id, request.reason)
             await hub.broadcast(room_id, {"type": "room.stopped", "room": room.model_dump()})
             return room.model_dump()
@@ -330,17 +331,40 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             room = store.add_agent(room_id, agent, actor_id)
         return room
 
-    def _stop_active_agents(room_id: str, actor_id: str, reason: str, force: bool) -> None:
+    def _notify_controller_whisper(room_id: str, text: str) -> Any | None:
+        room = store.get_room(room_id)
+        controller = next(
+            (agent for agent in room.agents if agent.template_id == "controller" and agent.pane_id),
+            None,
+        )
+        if not controller:
+            return store.add_controller_message(
+                room_id,
+                "system",
+                "system",
+                "System",
+                "Controller pane unavailable. The whisper was saved, but no running controller pane received it.",
+            )
+        try:
+            tmux.send_controller_whisper(controller, text)
+        except TmuxError as exc:
+            return store.add_controller_message(room_id, "system", "system", "System", str(exc))
+        return None
+
+    def _stop_room_panes(room_id: str, actor_id: str, reason: str, force: bool, keep_controller: bool) -> None:
         room = store.get_room(room_id)
         for agent in room.agents:
-            if agent.pane_id and agent.state not in {"stopped", "done"}:
-                tmux.stop(agent, force)
-                store.update_agent(
-                    room_id,
-                    agent.id,
-                    {"state": "stopped", "pane_id": None, "reason": reason},
-                    actor_id,
-                    "agent.stopped",
-                )
+            if keep_controller and agent.template_id == "controller":
+                continue
+            if not agent.pane_id:
+                continue
+            tmux.stop(agent, force)
+            store.update_agent(
+                room_id,
+                agent.id,
+                {"state": "stopped", "pane_id": None, "reason": reason},
+                actor_id,
+                "agent.stopped",
+            )
 
     return app

@@ -104,6 +104,24 @@ class TmuxManager:
         )
         subprocess.run(["tmux", "send-keys", "-t", agent.pane_id, text, "Enter"], check=True)
 
+    def send_controller_whisper(self, agent: AgentInstance, text: str) -> None:
+        if not agent.pane_id:
+            raise TmuxError(f"controller has no tmux pane: {agent.id}")
+        prompt = "\n".join(
+            [
+                "Private controller whisper from the user:",
+                text,
+                "",
+                "This is not a public room message.",
+                "Use controller_read if you need the private log, then reply with controller_post.",
+                "Use room_post only if the response should be visible to every agent.",
+            ]
+        )
+        try:
+            subprocess.run(["tmux", "send-keys", "-t", agent.pane_id, prompt, "Enter"], check=True)
+        except subprocess.CalledProcessError as exc:
+            raise TmuxError(f"failed to notify controller pane: {agent.pane_id}") from exc
+
     def _goal_prompt(
         self,
         room: Room,

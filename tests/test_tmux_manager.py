@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from agent_room.models import AgentInstance
 from agent_room.models import AgentTemplate, Room
 from agent_room.tmux_manager import TmuxManager
 
@@ -223,3 +224,39 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "Agent Room MCP tools" in controller_prompt
     assert "uv run agent-room room" not in controller_prompt
     assert "uv run agent-room room" not in agent_prompt
+
+
+def test_send_controller_whisper_marks_private_prompt(tmp_path, monkeypatch) -> None:
+    calls = []
+
+    def fake_run(command, check):
+        calls.append((command, check))
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    manager = TmuxManager(Path.cwd(), tmp_path, auth_file)
+    agent = AgentInstance(
+        id="controller-1",
+        room_id="room-test",
+        template_id="controller",
+        name="Controller",
+        short_name="Control",
+        role="control",
+        personality="Direct",
+        accent="#136F63",
+        avatar_url="/api/templates/controller/avatar",
+        state="active",
+        pane_id="%1",
+    )
+
+    manager.send_controller_whisper(agent, "Private instruction")
+
+    assert calls
+    command, check = calls[0]
+    assert command[:4] == ["tmux", "send-keys", "-t", "%1"]
+    assert "Private controller whisper" in command[4]
+    assert "Private instruction" in command[4]
+    assert "not a public room message" in command[4]
+    assert command[-1] == "Enter"
+    assert check is True
