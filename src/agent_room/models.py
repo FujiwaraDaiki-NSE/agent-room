@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 AgentState = Literal["starting", "active", "idle", "speaking", "done", "stopped", "failed"]
+RoomState = Literal["draft", "starting", "open", "done", "stopped"]
 ActorType = Literal["user", "agent", "controller", "system"]
 
 
@@ -74,7 +75,7 @@ class Room(BaseModel):
     share_contexts: list[str]
     agent_posting_closed: bool
     muted_agent_ids: list[str]
-    state: Literal["draft", "open", "done", "stopped"]
+    state: RoomState
     created_at: str
     agents: list[AgentInstance]
 

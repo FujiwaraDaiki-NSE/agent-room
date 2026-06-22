@@ -100,10 +100,16 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
                 request.controller_termination,
                 request.agent_termination,
                 share_contexts,
+                "starting",
             )
             store.add_message(room.id, "user", "user", "User", request.goal, "goal")
-            for template_id in request.templates:
-                await _deploy(room.id, template_id, 1, "user")
+            try:
+                for template_id in request.templates:
+                    await _deploy(room.id, template_id, 1, "user")
+                room = store.set_room_state(room.id, "open", "system", "agents deployed")
+            except (ValueError, TemplateError, TmuxError, KeyError) as exc:
+                store.set_room_state(room.id, "stopped", "system", str(exc))
+                raise
             room = store.get_room(room.id)
             await hub.broadcast(room.id, {"type": "room.created", "room": room.model_dump()})
             return room.model_dump()

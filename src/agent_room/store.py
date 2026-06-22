@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import AgentInstance, ActorType, Event, Message, Room
+from .models import AgentInstance, ActorType, Event, Message, Room, RoomState
 
 
 AUTO_ROOM_NAME = "Room"
@@ -77,6 +77,7 @@ class Store:
         controller_termination: str,
         agent_termination: str,
         share_contexts: list[str],
+        state: RoomState,
     ) -> Room:
         self._require("name", name)
         self._require("goal", goal)
@@ -93,7 +94,7 @@ class Store:
             room.share_contexts = share_contexts
             room.agent_posting_closed = False
             room.muted_agent_ids = []
-            room.state = "open"
+            room.state = state
             room.agents = []
             data["rooms"] = {room.id: room.model_dump()}
             data["messages"] = {room.id: []}
@@ -103,7 +104,7 @@ class Store:
             self._append_event(
                 data,
                 room.id,
-                "room.started",
+                self._room_state_event_type(state),
                 "system",
                 None,
                 None,
@@ -179,13 +180,13 @@ class Store:
             self._write(data)
             return room
 
-    def set_room_state(self, room_id: str, state: str, actor_id: str, reason: str) -> Room:
+    def set_room_state(self, room_id: str, state: RoomState, actor_id: str, reason: str) -> Room:
         with self.lock:
             data = self._read()
             room = self._room(data, room_id)
-            room.state = state  # type: ignore[assignment]
+            room.state = state
             data["rooms"][room_id] = room.model_dump()
-            self._append_event(data, room_id, f"room.{state}", actor_id, room_id, reason, {})
+            self._append_event(data, room_id, self._room_state_event_type(state), actor_id, room_id, reason, {})
             self._write(data)
             return room
 
@@ -367,7 +368,7 @@ class Store:
         goal: str,
         controller_termination: str,
         agent_termination: str,
-        state: str,
+        state: RoomState,
     ) -> Room:
         room_id = f"room-{uuid.uuid4().hex[:8]}"
         return Room(
@@ -379,7 +380,12 @@ class Store:
             share_contexts=[],
             agent_posting_closed=False,
             muted_agent_ids=[],
-            state=state,  # type: ignore[arg-type]
+            state=state,
             created_at=now_iso(),
             agents=[],
         )
+
+    def _room_state_event_type(self, state: RoomState) -> str:
+        if state == "open":
+            return "room.started"
+        return f"room.{state}"

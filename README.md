@@ -126,6 +126,7 @@ The setup UI lists direct directories under `share/`.
 Selected directories are exposed to deployed agents as `./share/<context-name>`.
 The app copies selected directories into each agent runtime as a snapshot.
 Dependency, build, and cache directories such as `node_modules`, `.venv`, `.next`, `dist`, and `tmp` are skipped.
+Room start waits for these runtime copies and agent deployment to finish before the room becomes `Open`.
 
 ## Room Controls
 

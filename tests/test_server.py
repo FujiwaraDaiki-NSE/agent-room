@@ -66,10 +66,59 @@ def test_api_room_without_agents(tmp_path) -> None:
     assert room["share_contexts"] == []
     assert room["agent_posting_closed"] is False
     assert room["muted_agent_ids"] == []
+    assert room["state"] == "open"
     assert room["agents"] == []
 
     messages = client.get(f"/api/rooms/{room['id']}/messages").json()
     assert messages[0]["kind"] == "goal"
+
+
+def test_room_opens_after_agent_deploy_finishes(tmp_path, monkeypatch) -> None:
+    deploy_room_states = []
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+
+    def fake_deploy(self, room, template, template_dir, actor_id, goal, controller_termination, agent_termination):
+        deploy_room_states.append(room.state)
+        return AgentInstance(
+            id=f"{template.id}-fake",
+            room_id=room.id,
+            template_id=template.id,
+            name=template.name,
+            short_name=template.short_name,
+            role=template.role,
+            personality=template.personality,
+            accent=template.accent,
+            avatar_url=f"/api/templates/{template.id}/avatar",
+            state="active",
+            pane_id="%1",
+            runtime_dir=str(tmp_path / "runtime" / template.id),
+            goal=goal,
+            controller_termination=controller_termination if template.scope == "controller" else None,
+            agent_termination=agent_termination,
+        )
+
+    monkeypatch.setattr(TmuxManager, "deploy", fake_deploy)
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+
+    response = client.post(
+        "/api/rooms",
+        json={
+            "name": "Design",
+            "goal": "Discuss architecture",
+            "controller_termination": "Controller closes the room",
+            "agent_termination": "Each agent is done",
+            "share_contexts": [],
+            "templates": ["controller"],
+        },
+    )
+
+    assert response.status_code == 200
+    room = response.json()
+    assert deploy_room_states == ["starting"]
+    assert room["state"] == "open"
+    event_types = [event["type"] for event in client.get(f"/api/rooms/{room['id']}/events").json()]
+    assert event_types == ["room.starting", "message.created", "agent.deployed", "room.started"]
 
 
 def test_share_contexts_list_direct_share_directories(tmp_path) -> None:
