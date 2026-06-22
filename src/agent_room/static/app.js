@@ -1,5 +1,6 @@
 const state = {
   templates: [],
+  teams: [],
   shareContexts: [],
   tmux: null,
   room: null,
@@ -52,6 +53,7 @@ async function boot() {
   $("controllerTermination").addEventListener("input", renderControls);
   $("agentTermination").addEventListener("input", renderControls);
   $("shareContextList").addEventListener("change", renderControls);
+  $("teamList").addEventListener("change", renderControls);
   $("templateList").addEventListener("change", renderControls);
   $("messageText").addEventListener("keydown", (event) => handleComposerKey(event, sendMessage));
   $("controllerText").addEventListener("keydown", (event) => handleComposerKey(event, sendControllerMessage));
@@ -77,14 +79,17 @@ async function runAction(label, task) {
 }
 
 async function refresh() {
-  const [templates, shareContexts, tmux] = await Promise.all([
+  const [templates, teams, shareContexts, tmux] = await Promise.all([
     api("/api/templates"),
+    api("/api/teams"),
     api("/api/share/contexts"),
     api("/api/tmux"),
   ]);
   state.templates = templates;
+  state.teams = teams;
   state.shareContexts = shareContexts;
   state.tmux = tmux;
+  renderTeams();
   renderTemplates();
   renderShareContexts();
   renderDeploy();
@@ -129,6 +134,7 @@ async function startRoom() {
     agent_termination: $("agentTermination").value.trim(),
     share_contexts: selectedShareContexts(),
     templates: selected,
+    teams: selectedTeams(),
   };
   state.room = await api("/api/rooms", { method: "POST", body: JSON.stringify(payload) });
   connectRoom();
@@ -312,6 +318,29 @@ function renderTemplates() {
   updateTemplateCount();
 }
 
+function renderTeams() {
+  if (!state.teams.length) {
+    $("teamList").innerHTML = `<div class="emptyState">No teams</div>`;
+    return;
+  }
+  const templateNames = new Map(state.templates.map((template) => [template.id, template.name]));
+  $("teamList").innerHTML = state.teams
+    .map((team) => {
+      const members = team.templates.map((templateId) => templateNames.get(templateId)).join(" / ");
+      return `
+        <label class="teamCard">
+          <span>
+            <strong>${escapeHtml(team.name)}</strong>
+            <span>${escapeHtml(team.summary)}</span>
+            <small>${escapeHtml(members)}</small>
+          </span>
+          <input data-team-check type="checkbox" value="${escapeHtml(team.id)}" />
+        </label>
+      `;
+    })
+    .join("");
+}
+
 function renderShareContexts() {
   const selected = new Set(state.room && state.room.share_contexts ? state.room.share_contexts : []);
   if (!state.shareContexts.length) {
@@ -433,6 +462,9 @@ function renderControls() {
   document.querySelectorAll("[data-share-context-check]").forEach((input) => {
     input.disabled = !isDraft || pending;
   });
+  document.querySelectorAll("[data-team-check]").forEach((input) => {
+    input.disabled = !isDraft || pending;
+  });
   document.querySelectorAll("[data-template-check]").forEach((input) => {
     const isController = input.value === "controller";
     input.disabled = isController || !isDraft || pending;
@@ -457,6 +489,9 @@ function updateTemplateCount() {
   const checks = [...document.querySelectorAll("[data-template-check]")];
   const selected = checks.filter((input) => input.checked).length;
   $("templateCount").textContent = checks.length ? `${selected} / ${checks.length}` : "0";
+  const teamChecks = [...document.querySelectorAll("[data-team-check]")];
+  const selectedTeams = teamChecks.filter((input) => input.checked).length;
+  $("teamCount").textContent = teamChecks.length ? `${selectedTeams} / ${teamChecks.length}` : "0";
 }
 
 function renderPills() {
@@ -664,6 +699,10 @@ function isMuted(agent) {
 
 function selectedShareContexts() {
   return [...document.querySelectorAll("[data-share-context-check]:checked")].map((input) => input.value);
+}
+
+function selectedTeams() {
+  return [...document.querySelectorAll("[data-team-check]:checked")].map((input) => input.value);
 }
 
 function agentMap() {

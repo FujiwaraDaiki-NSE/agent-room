@@ -58,6 +58,7 @@ def test_api_room_without_agents(tmp_path) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     )
 
@@ -77,6 +78,25 @@ def test_api_room_without_agents(tmp_path) -> None:
 
     messages = client.get(f"/api/rooms/{room['id']}/messages").json()
     assert messages[0]["kind"] == "goal"
+
+
+def test_api_lists_agent_teams(tmp_path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+
+    response = client.get("/api/teams")
+
+    assert response.status_code == 200
+    teams = response.json()
+    critique_lab = next(team for team in teams if team["id"] == "critique-lab")
+    assert critique_lab["templates"] == [
+        "critique-technical",
+        "critique-user",
+        "critique-business",
+        "critique-risk",
+        "idea-reviser",
+    ]
 
 
 def test_room_opens_after_agent_deploy_finishes(tmp_path, monkeypatch) -> None:
@@ -116,6 +136,7 @@ def test_room_opens_after_agent_deploy_finishes(tmp_path, monkeypatch) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": ["controller"],
+            "teams": [],
         },
     )
 
@@ -125,6 +146,58 @@ def test_room_opens_after_agent_deploy_finishes(tmp_path, monkeypatch) -> None:
     assert room["state"] == "open"
     event_types = [event["type"] for event in client.get(f"/api/rooms/{room['id']}/events").json()]
     assert event_types == ["room.starting", "message.created", "agent.deployed", "room.started"]
+
+
+def test_room_start_expands_selected_team_templates(tmp_path, monkeypatch) -> None:
+    deployed = []
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+
+    def fake_deploy(self, room, template, template_dir, actor_id, goal, controller_termination, agent_termination):
+        deployed.append(template.id)
+        return AgentInstance(
+            id=f"{template.id}-fake",
+            room_id=room.id,
+            template_id=template.id,
+            name=template.name,
+            short_name=template.short_name,
+            role=template.role,
+            personality=template.personality,
+            accent=template.accent,
+            avatar_url=f"/api/templates/{template.id}/avatar",
+            state="active",
+            pane_id=f"%{len(deployed)}",
+            runtime_dir=str(tmp_path / "runtime" / template.id),
+            goal=goal,
+            controller_termination=controller_termination if template.scope == "controller" else None,
+            agent_termination=agent_termination,
+        )
+
+    monkeypatch.setattr(TmuxManager, "deploy", fake_deploy)
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+
+    response = client.post(
+        "/api/rooms",
+        json={
+            "name": "Design",
+            "goal": "Discuss architecture",
+            "controller_termination": "Controller closes the room",
+            "agent_termination": "Each agent is done",
+            "share_contexts": [],
+            "templates": ["controller"],
+            "teams": ["critique-lab"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert deployed == [
+        "controller",
+        "critique-technical",
+        "critique-user",
+        "critique-business",
+        "critique-risk",
+        "idea-reviser",
+    ]
 
 
 def test_share_contexts_list_direct_share_directories(tmp_path) -> None:
@@ -161,6 +234,7 @@ def test_room_stores_selected_share_contexts(tmp_path) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": ["alpha"],
             "templates": [],
+            "teams": [],
         },
     )
 
@@ -184,6 +258,7 @@ def test_room_rejects_unknown_share_context(tmp_path) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": ["missing"],
             "templates": [],
+            "teams": [],
         },
     )
 
@@ -233,6 +308,7 @@ def test_controller_updates_meeting_status(tmp_path) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
     write_room_agents(
@@ -283,6 +359,7 @@ def test_regular_agent_cannot_update_meeting_status(tmp_path) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
     write_room_agents(tmp_path, room["id"], [agent_instance("critic-1", "critic", "active", "%2")])
@@ -392,6 +469,7 @@ def test_closed_discussion_blocks_regular_agent_posts_but_allows_controller_and_
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
     write_room_agents(
@@ -461,6 +539,7 @@ def test_agent_mute_blocks_only_target_agent(tmp_path) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
     write_room_agents(
@@ -564,6 +643,7 @@ def test_room_done_stops_agent_panes_but_keeps_controller_pane(tmp_path, monkeyp
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
     write_room_agents(
@@ -612,6 +692,7 @@ def test_room_stop_closes_all_panes_even_when_agents_are_done(tmp_path, monkeypa
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
     write_room_agents(
@@ -650,6 +731,7 @@ def test_deploy_requires_tmux(tmp_path, monkeypatch) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
 

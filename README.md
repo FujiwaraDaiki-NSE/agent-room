@@ -16,6 +16,7 @@ The room log is the shared state. Each agent reads and posts through the room AP
 - Controller agent with lifecycle commands
 - Controller runs with workspace write access; other agents run read-only with network access
 - Multiple agent templates with personalities
+- Agent teams that expand into template groups
 - Per-template `.codex` and `AGENTS.md`
 - Codex subagent config under each template
 
@@ -33,6 +34,9 @@ share/
 
 agent-templates/
   critic/
+
+agent-teams/
+  critique-lab/
   researcher/
   builder/
   synthesizer/
@@ -104,9 +108,9 @@ This keeps personality and agent config isolated without forcing each pane to lo
 2. Enter `Controller Termination`.
 3. Enter `Agent Termination`.
 4. Select shared context directories from `share/`.
-5. Select templates.
+5. Select templates and teams.
 6. Press `Start`.
-7. The app creates one tmux pane per selected agent. `Controller` is always included.
+7. The app expands selected teams and creates one tmux pane per selected agent. `Controller` is always included.
 8. Each Codex TUI starts with `/goal`.
 9. Agents read selected shared context through `./share/<context-name>`.
 10. Agents read and post through the Agent Room MCP tools.
@@ -131,7 +135,7 @@ Room start waits for these runtime copies and agent deployment to finish before 
 ## Room Controls
 
 - `New`: Stop current agent panes and replace the current room with a fresh draft room.
-- `Start`: Start the current room from the form and deploy the selected templates.
+- `Start`: Start the current room from the form and deploy the selected templates and teams.
 - `Close`: Stop the current room and close only its agent panes.
 - `Refresh`: Reload templates, the current room, messages, and tmux status.
 

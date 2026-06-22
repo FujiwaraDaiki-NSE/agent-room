@@ -1,7 +1,7 @@
 import tomllib
 from pathlib import Path
 
-from agent_room.templates import TemplateRegistry
+from agent_room.templates import TeamRegistry, TemplateRegistry
 
 
 def test_templates_have_required_files() -> None:
@@ -9,7 +9,20 @@ def test_templates_have_required_files() -> None:
     templates = registry.list()
 
     ids = {template.id for template in templates}
-    assert {"controller", "critic", "researcher", "builder", "synthesizer", "facilitator", "operator"} <= ids
+    assert {
+        "controller",
+        "critic",
+        "researcher",
+        "builder",
+        "synthesizer",
+        "facilitator",
+        "operator",
+        "critique-technical",
+        "critique-user",
+        "critique-business",
+        "critique-risk",
+        "idea-reviser",
+    } <= ids
 
     for template in templates:
         assert registry.avatar_path(template.id).is_file()
@@ -56,3 +69,16 @@ def test_templates_define_meeting_authority() -> None:
             assert "Follow controller instructions" in text
             assert "mark yourself done" in text
             assert "override the normal round protocol" in text
+
+
+def test_teams_reference_regular_agent_templates() -> None:
+    registry = TemplateRegistry(Path.cwd())
+    team_registry = TeamRegistry(Path.cwd(), registry)
+    teams = team_registry.list()
+
+    ids = {team.id for team in teams}
+    assert "critique-lab" in ids
+    for team in teams:
+        assert team.templates
+        for template_id in team.templates:
+            assert registry.get(template_id).scope == "agent"

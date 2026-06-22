@@ -24,6 +24,13 @@ class AgentTemplate(BaseModel):
     permissions: list[str]
 
 
+class AgentTeam(BaseModel):
+    id: str
+    name: str
+    summary: str
+    templates: list[str]
+
+
 class AgentInstance(BaseModel):
     id: str
     room_id: str
@@ -99,6 +106,7 @@ class CreateRoomRequest(BaseModel):
     agent_termination: str
     share_contexts: list[str]
     templates: list[str]
+    teams: list[str]
 
 
 class PostMessageRequest(BaseModel):

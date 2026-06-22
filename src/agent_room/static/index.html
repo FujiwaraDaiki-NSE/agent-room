@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Agent Room</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260622-meeting-status" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260622-teams" />
   </head>
   <body>
     <main class="shell">
@@ -84,6 +84,13 @@
                   </div>
                 </div>
                 <div id="templateList" class="templateList"></div>
+              </div>
+              <div>
+                <div class="sectionHead">
+                  <h2>Teams</h2>
+                  <span id="teamCount">0</span>
+                </div>
+                <div id="teamList" class="teamList"></div>
               </div>
               <button id="startRoom" class="primary">Start</button>
             </section>
@@ -189,6 +196,6 @@
         </aside>
       </section>
     </main>
-    <script src="/static/app.js?v=20260622-meeting-status"></script>
+    <script src="/static/app.js?v=20260622-teams"></script>
   </body>
 </html>

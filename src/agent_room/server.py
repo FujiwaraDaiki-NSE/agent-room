@@ -18,7 +18,7 @@ from .models import (
     UpdateMeetingStatusRequest,
 )
 from .store import Store
-from .templates import TemplateError, TemplateRegistry
+from .templates import TeamRegistry, TemplateError, TemplateRegistry
 from .tmux_manager import TmuxError, TmuxManager
 
 
@@ -50,6 +50,7 @@ class ControllerNotifyResult:
 
 def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> FastAPI:
     registry = TemplateRegistry(project_root)
+    team_registry = TeamRegistry(project_root, registry)
     store = Store(data_dir)
     tmux = TmuxManager(project_root, data_dir, codex_auth_file)
     share_root = project_root / "share"
@@ -74,6 +75,13 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
     def list_templates() -> list[dict[str, Any]]:
         try:
             return [template.model_dump(by_alias=True) | {"avatarUrl": f"/api/templates/{template.id}/avatar"} for template in registry.list()]
+        except TemplateError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/api/teams")
+    def list_teams() -> list[dict[str, Any]]:
+        try:
+            return [team.model_dump() for team in team_registry.list()]
         except TemplateError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -111,7 +119,7 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             )
             store.add_message(room.id, "user", "user", "User", request.goal, "goal")
             try:
-                for template_id in request.templates:
+                for template_id in _selected_template_ids(request.templates, request.teams):
                     await _deploy(room.id, template_id, 1, "user")
                 room = store.set_room_state(room.id, "open", "system", "agents deployed")
             except (ValueError, TemplateError, TmuxError, KeyError) as exc:
@@ -415,6 +423,14 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             )
             room = store.add_agent(room_id, agent, actor_id)
         return room
+
+    def _selected_template_ids(template_ids: list[str], team_ids: list[str]) -> list[str]:
+        selected = []
+        for template_id in template_ids:
+            selected.append(template_id)
+        for team_id in team_ids:
+            selected.extend(team_registry.get(team_id).templates)
+        return list(dict.fromkeys(selected))
 
     def _notify_controller_whisper(room_id: str, text: str) -> ControllerNotifyResult:
         room = store.get_room(room_id)
