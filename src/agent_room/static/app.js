@@ -336,7 +336,7 @@ function renderDeploy() {
 
 function renderRoom() {
   const room = state.room;
-  $("activeRoom").textContent = room ? `${room.state} · ${state.messages.length}` : "No room";
+  $("activeRoom").textContent = room ? `${room.state}${room.agent_posting_closed ? " · quiet" : ""} · ${state.messages.length}` : "No room";
   $("roomState").textContent = room ? stateLabel(room.state) : "Idle";
   $("tableState").textContent = room ? stateLabel(room.state) : "Idle";
   $("setupState").textContent = room ? stateLabel(room.state) : "Draft";
@@ -398,7 +398,9 @@ function renderPills() {
   const agents = room ? room.agents : [];
   const activeCount = agents.filter((agent) => ["starting", "active", "speaking", "idle"].includes(agent.state)).length;
   const doneCount = agents.filter((agent) => agent.state === "done").length;
-  $("roomStatusPill").textContent = room ? stateLabel(room.state) : "No room";
+  $("roomStatusPill").textContent = room
+    ? `${stateLabel(room.state)}${room.agent_posting_closed ? " · Quiet" : ""}`
+    : "No room";
   $("agentCountPill").textContent = `Agents ${agents.length} / Active ${activeCount} / Done ${doneCount}`;
   $("activeAgentCount").textContent = `${activeCount} active`;
   $("socketStatusPill").textContent = socketLabel();
@@ -473,6 +475,7 @@ function renderRoster(agents) {
           </div>
           <div class="rosterState">
             <span class="moodBadge mood-${signal.key}" title="${escapeHtml(signal.label)}" aria-label="${escapeHtml(signal.label)}">${escapeHtml(signal.glyph)}</span>
+            ${isMuted(agent) ? `<span class="stateBadge mutedBadge">Muted</span>` : ""}
             <span class="stateBadge">${escapeHtml(stateLabel(agent.state))}</span>
           </div>
         </article>
@@ -587,6 +590,10 @@ function setStatus(text, error) {
 function hasActiveAgents() {
   if (!state.room) return false;
   return state.room.agents.some((agent) => ["starting", "active", "speaking", "idle"].includes(agent.state));
+}
+
+function isMuted(agent) {
+  return Boolean(state.room && state.room.muted_agent_ids && state.room.muted_agent_ids.includes(agent.id));
 }
 
 function selectedShareContexts() {

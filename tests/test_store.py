@@ -43,6 +43,16 @@ def test_controller_messages_are_separate_from_room_messages(tmp_path) -> None:
     assert [message.text for message in store.list_controller_messages(room.id, None)] == [private.text]
 
 
+def test_discussion_close_is_room_state(tmp_path) -> None:
+    store = Store(tmp_path)
+    room = store.create_room("Spec", "Discuss", "Controller done", "Agents done", [])
+
+    closed = store.set_agent_posting_closed(room.id, True, "controller-1", "final summary")
+
+    assert closed.agent_posting_closed is True
+    assert store.list_events(room.id)[-1].type == "room.discussion_closed"
+
+
 def test_old_termination_state_is_migrated(tmp_path) -> None:
     state = {
         "rooms": {
@@ -69,3 +79,5 @@ def test_old_termination_state_is_migrated(tmp_path) -> None:
     assert room.controller_termination == "Done"
     assert room.agent_termination == "Done"
     assert room.share_contexts == []
+    assert room.agent_posting_closed is False
+    assert room.muted_agent_ids == []

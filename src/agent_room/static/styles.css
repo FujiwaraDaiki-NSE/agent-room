@@ -219,6 +219,12 @@ h2 {
   line-height: 1.2;
 }
 
+.mutedBadge {
+  color: #8c2f39;
+  border-color: #efb8bf;
+  background: #fff4f5;
+}
+
 .briefBar {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(150px, 0.6fr);

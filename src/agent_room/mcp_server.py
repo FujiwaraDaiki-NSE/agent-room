@@ -223,6 +223,67 @@ def create_agent_room_mcp(
             }
             return call("POST", url(f"/api/rooms/{room_id}/agents/{target_agent_id}/config"), payload)
 
+        @mcp.tool
+        def room_close_discussion(reason: str) -> dict[str, Any]:
+            """Close public discussion for regular agents.
+
+            After this tool is used, regular agents cannot post public messages.
+            The controller and user can still post, so use this before a final
+            controller summary or when the user asks to end the discussion.
+
+            Args:
+                reason: Short reason for closing discussion.
+
+            Returns:
+                The updated room state.
+            """
+            payload = {"actor_id": agent_id, "reason": reason}
+            return call("POST", url(f"/api/rooms/{room_id}/discussion/close"), payload)
+
+        @mcp.tool
+        def room_open_discussion(reason: str) -> dict[str, Any]:
+            """Reopen public discussion for regular agents.
+
+            Args:
+                reason: Short reason for reopening discussion.
+
+            Returns:
+                The updated room state.
+            """
+            payload = {"actor_id": agent_id, "reason": reason}
+            return call("POST", url(f"/api/rooms/{room_id}/discussion/open"), payload)
+
+        @mcp.tool
+        def agent_mute(target_agent_id: str, reason: str) -> dict[str, Any]:
+            """Mute one regular agent's public messages.
+
+            The target agent remains running and can still read the room or
+            mark itself done, but public posts are rejected until unmuted.
+
+            Args:
+                target_agent_id: Agent id to mute.
+                reason: Short reason for muting.
+
+            Returns:
+                The updated room state.
+            """
+            payload = {"actor_id": agent_id, "reason": reason}
+            return call("POST", url(f"/api/rooms/{room_id}/agents/{target_agent_id}/mute"), payload)
+
+        @mcp.tool
+        def agent_unmute(target_agent_id: str, reason: str) -> dict[str, Any]:
+            """Unmute one regular agent's public messages.
+
+            Args:
+                target_agent_id: Agent id to unmute.
+                reason: Short reason for unmuting.
+
+            Returns:
+                The updated room state.
+            """
+            payload = {"actor_id": agent_id, "reason": reason}
+            return call("POST", url(f"/api/rooms/{room_id}/agents/{target_agent_id}/unmute"), payload)
+
     return mcp
 
 

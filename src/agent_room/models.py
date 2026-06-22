@@ -72,6 +72,8 @@ class Room(BaseModel):
     controller_termination: str
     agent_termination: str
     share_contexts: list[str]
+    agent_posting_closed: bool
+    muted_agent_ids: list[str]
     state: Literal["draft", "open", "done", "stopped"]
     created_at: str
     agents: list[AgentInstance]

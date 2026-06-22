@@ -91,6 +91,8 @@ class Store:
             room.controller_termination = controller_termination
             room.agent_termination = agent_termination
             room.share_contexts = share_contexts
+            room.agent_posting_closed = False
+            room.muted_agent_ids = []
             room.state = "open"
             room.agents = []
             data["rooms"] = {room.id: room.model_dump()}
@@ -109,6 +111,43 @@ class Store:
             )
             self._write(data)
         return room
+
+    def set_agent_posting_closed(self, room_id: str, closed: bool, actor_id: str, reason: str) -> Room:
+        with self.lock:
+            data = self._read()
+            room = self._room(data, room_id)
+            room.agent_posting_closed = closed
+            data["rooms"][room_id] = room.model_dump()
+            event_type = "room.discussion_closed" if closed else "room.discussion_opened"
+            self._append_event(data, room_id, event_type, actor_id, room_id, reason, {"closed": closed})
+            self._write(data)
+            return room
+
+    def set_agent_muted(self, room_id: str, agent_id: str, muted: bool, actor_id: str, reason: str) -> Room:
+        with self.lock:
+            data = self._read()
+            room = self._room(data, room_id)
+            if not any(agent.id == agent_id for agent in room.agents):
+                raise KeyError(f"agent not found: {agent_id}")
+            muted_ids = set(room.muted_agent_ids)
+            if muted:
+                muted_ids.add(agent_id)
+            else:
+                muted_ids.discard(agent_id)
+            room.muted_agent_ids = sorted(muted_ids)
+            data["rooms"][room_id] = room.model_dump()
+            event_type = "agent.muted" if muted else "agent.unmuted"
+            self._append_event(
+                data,
+                room_id,
+                event_type,
+                actor_id,
+                agent_id,
+                reason,
+                {"muted": muted, "reason": reason},
+            )
+            self._write(data)
+            return room
 
     def add_agent(self, room_id: str, agent: AgentInstance, actor_id: str) -> Room:
         with self.lock:
@@ -304,6 +343,10 @@ class Store:
                 room["agent_termination"] = room.get("termination", "")
             if "share_contexts" not in room:
                 room["share_contexts"] = []
+            if "agent_posting_closed" not in room:
+                room["agent_posting_closed"] = False
+            if "muted_agent_ids" not in room:
+                room["muted_agent_ids"] = []
             if room_id not in data["messages"]:
                 data["messages"][room_id] = []
             if room_id not in data["controller_messages"]:
@@ -334,6 +377,8 @@ class Store:
             controller_termination=controller_termination,
             agent_termination=agent_termination,
             share_contexts=[],
+            agent_posting_closed=False,
+            muted_agent_ids=[],
             state=state,  # type: ignore[arg-type]
             created_at=now_iso(),
             agents=[],

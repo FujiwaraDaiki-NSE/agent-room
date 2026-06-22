@@ -64,6 +64,8 @@ def test_api_room_without_agents(tmp_path) -> None:
     assert room["controller_termination"] == "Controller closes the room"
     assert room["agent_termination"] == "Each agent is done"
     assert room["share_contexts"] == []
+    assert room["agent_posting_closed"] is False
+    assert room["muted_agent_ids"] == []
     assert room["agents"] == []
 
     messages = client.get(f"/api/rooms/{room['id']}/messages").json()
@@ -193,6 +195,172 @@ def test_controller_private_message_notifies_controller_pane(tmp_path, monkeypat
 
     assert response.status_code == 200
     assert calls == [("controller-1", "%1", "Check privately")]
+
+
+def test_closed_discussion_blocks_regular_agent_posts_but_allows_controller_and_user(tmp_path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+    room = client.post(
+        "/api/rooms",
+        json={
+            "name": "Design",
+            "goal": "Discuss architecture",
+            "controller_termination": "Controller closes the room",
+            "agent_termination": "Each agent is done",
+            "share_contexts": [],
+            "templates": [],
+        },
+    ).json()
+    write_room_agents(
+        tmp_path,
+        room["id"],
+        [
+            agent_instance("controller-1", "controller", "active", "%1"),
+            agent_instance("critic-1", "critic", "active", "%2"),
+        ],
+    )
+
+    close_response = client.post(
+        f"/api/rooms/{room['id']}/discussion/close",
+        json={"actor_id": "controller-1", "reason": "final summary"},
+    )
+    assert close_response.status_code == 200
+    assert close_response.json()["agent_posting_closed"] is True
+
+    agent_response = client.post(
+        f"/api/rooms/{room['id']}/messages",
+        json={
+            "actor_type": "agent",
+            "actor_id": "critic-1",
+            "actor_name": "Critic",
+            "text": "One more concern",
+            "kind": "message",
+        },
+    )
+    assert agent_response.status_code == 400
+    assert "room discussion is closed" in agent_response.json()["detail"]
+
+    controller_response = client.post(
+        f"/api/rooms/{room['id']}/messages",
+        json={
+            "actor_type": "controller",
+            "actor_id": "controller-1",
+            "actor_name": "Controller",
+            "text": "Final summary",
+            "kind": "message",
+        },
+    )
+    user_response = client.post(
+        f"/api/rooms/{room['id']}/messages",
+        json={
+            "actor_type": "user",
+            "actor_id": "user",
+            "actor_name": "User",
+            "text": "Acknowledged",
+            "kind": "message",
+        },
+    )
+
+    assert controller_response.status_code == 200
+    assert user_response.status_code == 200
+
+
+def test_agent_mute_blocks_only_target_agent(tmp_path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+    room = client.post(
+        "/api/rooms",
+        json={
+            "name": "Design",
+            "goal": "Discuss architecture",
+            "controller_termination": "Controller closes the room",
+            "agent_termination": "Each agent is done",
+            "share_contexts": [],
+            "templates": [],
+        },
+    ).json()
+    write_room_agents(
+        tmp_path,
+        room["id"],
+        [
+            agent_instance("controller-1", "controller", "active", "%1"),
+            agent_instance("critic-1", "critic", "active", "%2"),
+            agent_instance("builder-1", "builder", "active", "%3"),
+        ],
+    )
+
+    mute_response = client.post(
+        f"/api/rooms/{room['id']}/agents/critic-1/mute",
+        json={"actor_id": "controller-1", "reason": "over limit"},
+    )
+    assert mute_response.status_code == 200
+    assert mute_response.json()["muted_agent_ids"] == ["critic-1"]
+
+    blocked = client.post(
+        f"/api/rooms/{room['id']}/messages",
+        json={
+            "actor_type": "agent",
+            "actor_id": "critic-1",
+            "actor_name": "Critic",
+            "text": "More",
+            "kind": "message",
+        },
+    )
+    allowed = client.post(
+        f"/api/rooms/{room['id']}/messages",
+        json={
+            "actor_type": "agent",
+            "actor_id": "builder-1",
+            "actor_name": "Builder",
+            "text": "Current status",
+            "kind": "message",
+        },
+    )
+
+    assert blocked.status_code == 400
+    assert "agent is muted: critic-1" in blocked.json()["detail"]
+    assert allowed.status_code == 200
+
+    unmute_response = client.post(
+        f"/api/rooms/{room['id']}/agents/critic-1/unmute",
+        json={"actor_id": "controller-1", "reason": "resume"},
+    )
+    assert unmute_response.status_code == 200
+    assert unmute_response.json()["muted_agent_ids"] == []
+
+    resumed = client.post(
+        f"/api/rooms/{room['id']}/messages",
+        json={
+            "actor_type": "agent",
+            "actor_id": "critic-1",
+            "actor_name": "Critic",
+            "text": "Back",
+            "kind": "message",
+        },
+    )
+    assert resumed.status_code == 200
+
+
+def test_controller_cannot_be_muted(tmp_path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+    room = client.get("/api/rooms").json()[0]
+    write_room_agents(
+        tmp_path,
+        room["id"],
+        [agent_instance("controller-1", "controller", "active", "%1")],
+    )
+
+    response = client.post(
+        f"/api/rooms/{room['id']}/agents/controller-1/mute",
+        json={"actor_id": "controller-1", "reason": "bad request"},
+    )
+
+    assert response.status_code == 400
+    assert "controller cannot be muted" in response.json()["detail"]
 
 
 def test_room_done_stops_agent_panes_but_keeps_controller_pane(tmp_path, monkeypatch) -> None:

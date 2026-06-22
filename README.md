@@ -157,8 +157,14 @@ Controller agents also receive:
 - `agent_stop`
 - `agent_goal`
 - `agent_config`
+- `room_close_discussion`
+- `room_open_discussion`
+- `agent_mute`
+- `agent_unmute`
 
 `agent config` writes only to the copied runtime directory for that agent. Template originals under `agent-templates/` are not modified during a meeting.
+`room_close_discussion` stops regular agents from posting public messages while allowing controller and user messages.
+`agent_mute` stops one regular agent from posting public messages without closing its pane.
 
 The older CLI commands remain available for manual debugging, but deployed agents are instructed to use MCP tools instead of direct HTTP or CLI calls.
 

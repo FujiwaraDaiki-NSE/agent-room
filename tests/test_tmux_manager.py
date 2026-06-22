@@ -69,6 +69,8 @@ def test_configure_mcp_adds_controller_tools(tmp_path, monkeypatch) -> None:
         controller_termination="Controller done",
         agent_termination="Agents done",
         share_contexts=[],
+        agent_posting_closed=False,
+        muted_agent_ids=[],
         state="open",
         created_at="2026-06-19T00:00:00+00:00",
         agents=[],
@@ -98,6 +100,8 @@ def test_configure_mcp_adds_controller_tools(tmp_path, monkeypatch) -> None:
     assert '"--controller"' in text
     assert '"controller_read"' in text
     assert '"agent_config"' in text
+    assert '"room_close_discussion"' in text
+    assert '"agent_mute"' in text
 
 
 def test_configure_mcp_limits_regular_agent_tools(tmp_path, monkeypatch) -> None:
@@ -116,6 +120,8 @@ def test_configure_mcp_limits_regular_agent_tools(tmp_path, monkeypatch) -> None
         controller_termination="Controller done",
         agent_termination="Agents done",
         share_contexts=[],
+        agent_posting_closed=False,
+        muted_agent_ids=[],
         state="open",
         created_at="2026-06-19T00:00:00+00:00",
         agents=[],
@@ -143,6 +149,8 @@ def test_configure_mcp_limits_regular_agent_tools(tmp_path, monkeypatch) -> None
     assert '"--controller"' not in text
     assert '"controller_read"' not in text
     assert '"agent_config"' not in text
+    assert '"room_close_discussion"' not in text
+    assert '"agent_mute"' not in text
 
 
 def test_controller_command_enables_network_and_workspace_write(tmp_path) -> None:
@@ -185,6 +193,8 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
         controller_termination="Controller done",
         agent_termination="Agents done",
         share_contexts=["alpha"],
+        agent_posting_closed=False,
+        muted_agent_ids=[],
         state="open",
         created_at="2026-06-19T00:00:00+00:00",
         agents=[],
@@ -244,7 +254,11 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "Agent Termination:\nAgents done" in agent_prompt
     assert "./share/alpha" in agent_prompt
     assert "Agent Room MCP tools" in controller_prompt
+    assert "room_close_discussion" in controller_prompt
+    assert "agent_mute" in controller_prompt
     assert "uv run agent-room room" not in controller_prompt
+    assert "room_close_discussion" not in agent_prompt
+    assert "agent_mute" not in agent_prompt
     assert "uv run agent-room room" not in agent_prompt
 
 

@@ -138,6 +138,7 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
     @app.post("/api/rooms/{room_id}/messages")
     async def post_message(room_id: str, request: PostMessageRequest) -> dict[str, Any]:
         try:
+            _assert_can_post(room_id, request)
             message = store.add_message(
                 room_id,
                 request.actor_type,
@@ -266,6 +267,44 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
         except (StopIteration, KeyError, TmuxError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/api/rooms/{room_id}/discussion/close")
+    async def close_discussion(room_id: str, request: MarkDoneRequest) -> dict[str, Any]:
+        try:
+            room = store.set_agent_posting_closed(room_id, True, request.actor_id, request.reason)
+            await hub.broadcast(room_id, {"type": "room.discussion_closed", "room": room.model_dump()})
+            return room.model_dump()
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/discussion/open")
+    async def open_discussion(room_id: str, request: MarkDoneRequest) -> dict[str, Any]:
+        try:
+            room = store.set_agent_posting_closed(room_id, False, request.actor_id, request.reason)
+            await hub.broadcast(room_id, {"type": "room.discussion_opened", "room": room.model_dump()})
+            return room.model_dump()
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/agents/{agent_id}/mute")
+    async def mute_agent(room_id: str, agent_id: str, request: MarkDoneRequest) -> dict[str, Any]:
+        try:
+            _require_regular_agent(room_id, agent_id)
+            room = store.set_agent_muted(room_id, agent_id, True, request.actor_id, request.reason)
+            await hub.broadcast(room_id, {"type": "agent.muted", "room": room.model_dump()})
+            return room.model_dump()
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/agents/{agent_id}/unmute")
+    async def unmute_agent(room_id: str, agent_id: str, request: MarkDoneRequest) -> dict[str, Any]:
+        try:
+            _require_regular_agent(room_id, agent_id)
+            room = store.set_agent_muted(room_id, agent_id, False, request.actor_id, request.reason)
+            await hub.broadcast(room_id, {"type": "agent.unmuted", "room": room.model_dump()})
+            return room.model_dump()
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.post("/api/rooms/{room_id}/agents/{agent_id}/config")
     async def update_agent_config(room_id: str, agent_id: str, request: UpdateAgentConfigRequest) -> dict[str, Any]:
         try:
@@ -376,6 +415,23 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
                 actor_id,
                 "agent.stopped",
             )
+
+    def _assert_can_post(room_id: str, request: PostMessageRequest) -> None:
+        if request.actor_type != "agent":
+            return
+        room = store.get_room(room_id)
+        if request.actor_id in room.muted_agent_ids:
+            raise ValueError(f"agent is muted: {request.actor_id}")
+        if room.agent_posting_closed:
+            raise ValueError("room discussion is closed; wait for controller")
+
+    def _require_regular_agent(room_id: str, agent_id: str) -> None:
+        room = store.get_room(room_id)
+        agent = next((item for item in room.agents if item.id == agent_id), None)
+        if not agent:
+            raise KeyError(f"agent not found: {agent_id}")
+        if agent.template_id == "controller":
+            raise ValueError("controller cannot be muted")
 
     def _share_contexts() -> list[dict[str, str]]:
         if not share_root.is_dir():

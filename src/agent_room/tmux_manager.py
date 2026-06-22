@@ -169,6 +169,10 @@ class TmuxManager:
                     "- agent_stop: stop an agent pane",
                     "- agent_goal: send a new goal to an agent",
                     "- agent_config: update an agent runtime config",
+                    "- room_close_discussion: close public discussion for regular agents",
+                    "- room_open_discussion: reopen public discussion for regular agents",
+                    "- agent_mute: mute one regular agent's public messages",
+                    "- agent_unmute: unmute one regular agent's public messages",
                     "",
                     "Use controller tools for user-side whispers and lifecycle operations.",
                 ]
@@ -330,6 +334,10 @@ class TmuxManager:
                     "agent_stop",
                     "agent_goal",
                     "agent_config",
+                    "room_close_discussion",
+                    "room_open_discussion",
+                    "agent_mute",
+                    "agent_unmute",
                 ]
             )
         mcp_config = [
