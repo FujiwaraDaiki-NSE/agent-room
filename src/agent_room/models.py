@@ -40,6 +40,7 @@ class AgentInstance(BaseModel):
     goal: str | None = None
     controller_termination: str | None = None
     agent_termination: str | None = None
+    codex_session_id: str | None = None
     config_path: str | None = None
     reason: str | None = None
 

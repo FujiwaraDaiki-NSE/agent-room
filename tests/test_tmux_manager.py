@@ -335,3 +335,87 @@ def test_send_controller_whisper_marks_private_prompt(tmp_path, monkeypatch) -> 
     assert "not a public room message" in command[4]
     assert command[-1] == "Enter"
     assert check is True
+
+
+def test_resume_controller_uses_saved_codex_session(tmp_path, monkeypatch) -> None:
+    session_id = "11111111-2222-3333-4444-555555555555"
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    runtime_dir = tmp_path / "runtime" / "controller"
+    sessions_dir = runtime_dir / ".codex" / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / f"rollout-2026-06-22-{session_id}.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("TMUX_PANE", "%0")
+    manager = TmuxManager(Path.cwd(), tmp_path, auth_file)
+    commands = []
+
+    def fake_split(command: str) -> str:
+        commands.append(command)
+        return "%9"
+
+    monkeypatch.setattr(manager, "_split_pane", fake_split)
+    agent = AgentInstance(
+        id="controller-1",
+        room_id="room-test",
+        template_id="controller",
+        name="Controller",
+        short_name="Control",
+        role="control",
+        personality="Direct",
+        accent="#136F63",
+        avatar_url="/api/templates/controller/avatar",
+        state="stopped",
+        pane_id=None,
+        runtime_dir=str(runtime_dir),
+    )
+
+    pane_id, resolved_session_id = manager.resume_controller(agent, "Follow up")
+
+    assert pane_id == "%9"
+    assert resolved_session_id == session_id
+    assert commands
+    assert "codex resume --sandbox workspace-write --ask-for-approval never" in commands[0]
+    assert session_id in commands[0]
+    assert "controller-resume-prompt.md" in commands[0]
+    assert "agent-exited" in commands[0]
+    prompt = (runtime_dir / "controller-resume-prompt.md").read_text(encoding="utf-8")
+    assert "Private controller whisper" in prompt
+    assert "Follow up" in prompt
+
+
+def test_resolve_codex_session_id_rejects_ambiguous_sessions(tmp_path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    runtime_dir = tmp_path / "runtime" / "controller"
+    sessions_dir = runtime_dir / ".codex" / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-2026-06-22-11111111-2222-3333-4444-555555555555.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+    (sessions_dir / "rollout-2026-06-22-66666666-7777-8888-9999-aaaaaaaaaaaa.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+    manager = TmuxManager(Path.cwd(), tmp_path, auth_file)
+    agent = AgentInstance(
+        id="controller-1",
+        room_id="room-test",
+        template_id="controller",
+        name="Controller",
+        short_name="Control",
+        role="control",
+        personality="Direct",
+        accent="#136F63",
+        avatar_url="/api/templates/controller/avatar",
+        state="stopped",
+        pane_id=None,
+        runtime_dir=str(runtime_dir),
+    )
+
+    try:
+        manager.resolve_codex_session_id(agent)
+    except Exception as exc:
+        assert "ambiguous" in str(exc)
+    else:
+        raise AssertionError("expected ambiguous session error")

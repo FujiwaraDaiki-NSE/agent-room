@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -15,6 +16,10 @@ from .models import AgentInstance, AgentTemplate, Room
 class TmuxError(RuntimeError):
     pass
 
+
+SESSION_ID_PATTERN = re.compile(
+    r"rollout-\d{4}-\d{2}-\d{2}-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl?$"
+)
 
 SHARE_COPY_IGNORE_PATTERNS = (
     "node_modules",
@@ -124,20 +129,43 @@ class TmuxManager:
     def send_controller_whisper(self, agent: AgentInstance, text: str) -> None:
         if not agent.pane_id:
             raise TmuxError(f"controller has no tmux pane: {agent.id}")
-        prompt = "\n".join(
-            [
-                "Private controller whisper from the user:",
-                text,
-                "",
-                "This is not a public room message.",
-                "Use controller_read if you need the private log, then reply with controller_post.",
-                "Use room_post only if the response should be visible to every agent.",
-            ]
-        )
+        prompt = self._controller_whisper_prompt(text)
         try:
             subprocess.run(["tmux", "send-keys", "-t", agent.pane_id, prompt, "Enter"], check=True)
         except subprocess.CalledProcessError as exc:
             raise TmuxError(f"failed to notify controller pane: {agent.pane_id}") from exc
+
+    def resume_controller(self, agent: AgentInstance, text: str) -> tuple[str, str]:
+        if not os.environ.get("TMUX_PANE"):
+            raise TmuxError("controller resume requires the server to run inside tmux")
+        if agent.template_id != "controller":
+            raise TmuxError(f"agent is not a controller: {agent.id}")
+        if agent.pane_id:
+            self.stop(agent, True)
+        runtime_dir = self._agent_runtime_dir(agent)
+        session_id = self.resolve_codex_session_id(agent)
+        prompt_path = runtime_dir / "controller-resume-prompt.md"
+        prompt_path.write_text(self._controller_whisper_prompt(text), encoding="utf-8")
+        pane_id = self._split_pane(self._resume_command(runtime_dir, prompt_path, session_id, True))
+        return pane_id, session_id
+
+    def has_agent_exited(self, agent: AgentInstance) -> bool:
+        if not agent.runtime_dir:
+            return False
+        return self._exit_marker(Path(agent.runtime_dir)).is_file()
+
+    def resolve_codex_session_id(self, agent: AgentInstance) -> str:
+        runtime_dir = self._agent_runtime_dir(agent)
+        if agent.codex_session_id:
+            if self._session_file_for_id(runtime_dir, agent.codex_session_id):
+                return agent.codex_session_id
+            raise TmuxError(f"codex session not found: {agent.codex_session_id}")
+        session_ids = self._discover_codex_session_ids(runtime_dir)
+        if len(session_ids) == 1:
+            return session_ids[0]
+        if not session_ids:
+            raise TmuxError(f"codex session not found for agent: {agent.id}")
+        raise TmuxError(f"codex session id is ambiguous for agent: {agent.id}")
 
     def _goal_prompt(
         self,
@@ -252,11 +280,30 @@ class TmuxManager:
         runtime = shlex.quote(str(runtime_dir))
         codex_home = shlex.quote(str(runtime_dir / ".codex"))
         prompt_name = shlex.quote(prompt_path.name)
+        exit_marker = shlex.quote(str(self._exit_marker(runtime_dir)))
         permission_args = self._permission_args(can_write)
         return (
             f"cd {runtime} && "
             f"export CODEX_HOME={codex_home} && "
+            f"rm -f {exit_marker} && "
             f'codex {permission_args} "$(cat {prompt_name})"; '
+            f"touch {exit_marker}; "
+            "exec bash"
+        )
+
+    def _resume_command(self, runtime_dir: Path, prompt_path: Path, session_id: str, can_write: bool) -> str:
+        runtime = shlex.quote(str(runtime_dir))
+        codex_home = shlex.quote(str(runtime_dir / ".codex"))
+        prompt_name = shlex.quote(prompt_path.name)
+        session = shlex.quote(session_id)
+        exit_marker = shlex.quote(str(self._exit_marker(runtime_dir)))
+        permission_args = self._permission_args(can_write)
+        return (
+            f"cd {runtime} && "
+            f"export CODEX_HOME={codex_home} && "
+            f"rm -f {exit_marker} && "
+            f'codex resume {permission_args} {session} "$(cat {prompt_name})"; '
+            f"touch {exit_marker}; "
             "exec bash"
         )
 
@@ -399,3 +446,46 @@ class TmuxManager:
             capture_output=True,
         )
         return result.stdout.strip()
+
+    def _agent_runtime_dir(self, agent: AgentInstance) -> Path:
+        if not agent.runtime_dir:
+            raise TmuxError(f"agent has no runtime directory: {agent.id}")
+        runtime_dir = Path(agent.runtime_dir)
+        if not runtime_dir.is_dir():
+            raise TmuxError(f"agent runtime directory not found: {runtime_dir}")
+        return runtime_dir
+
+    def _controller_whisper_prompt(self, text: str) -> str:
+        return "\n".join(
+            [
+                "Private controller whisper from the user:",
+                text,
+                "",
+                "This is not a public room message.",
+                "Use controller_read if you need the private log, then reply with controller_post.",
+                "Use room_post only if the response should be visible to every agent.",
+            ]
+        )
+
+    def _exit_marker(self, runtime_dir: Path) -> Path:
+        return runtime_dir / ".codex" / "agent-exited"
+
+    def _discover_codex_session_ids(self, runtime_dir: Path) -> list[str]:
+        sessions_dir = runtime_dir / ".codex" / "sessions"
+        if not sessions_dir.is_dir():
+            return []
+        session_ids = []
+        for path in sorted(sessions_dir.rglob("rollout-*.json*"), key=lambda item: item.stat().st_mtime, reverse=True):
+            match = SESSION_ID_PATTERN.match(path.name)
+            if match and match.group(1) not in session_ids:
+                session_ids.append(match.group(1))
+        return session_ids
+
+    def _session_file_for_id(self, runtime_dir: Path, session_id: str) -> Path | None:
+        sessions_dir = runtime_dir / ".codex" / "sessions"
+        if not sessions_dir.is_dir():
+            return None
+        for path in sessions_dir.rglob(f"rollout-*-{session_id}.json*"):
+            if SESSION_ID_PATTERN.match(path.name):
+                return path
+        return None

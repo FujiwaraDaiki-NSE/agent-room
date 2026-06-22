@@ -42,6 +42,12 @@ class Hub:
             await websocket.send_json(payload)
 
 
+class ControllerNotifyResult:
+    def __init__(self, notice: Any | None = None, room: Any | None = None) -> None:
+        self.notice = notice
+        self.room = room
+
+
 def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> FastAPI:
     registry = TemplateRegistry(project_root)
     store = Store(data_dir)
@@ -177,11 +183,15 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
                 request.text,
             )
             extra_messages = []
+            updated_room = None
             if request.actor_type == "user":
-                notice = _notify_controller_whisper(room_id, request.text)
-                if notice:
-                    extra_messages.append(notice)
+                result = _notify_controller_whisper(room_id, request.text)
+                if result.notice:
+                    extra_messages.append(result.notice)
+                updated_room = result.room
             await hub.broadcast(room_id, {"type": "controller.message.created", "controller_message": message.model_dump()})
+            if updated_room:
+                await hub.broadcast(room_id, {"type": "agent.resumed", "room": updated_room.model_dump()})
             for extra_message in extra_messages:
                 await hub.broadcast(
                     room_id,
@@ -406,25 +416,54 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             room = store.add_agent(room_id, agent, actor_id)
         return room
 
-    def _notify_controller_whisper(room_id: str, text: str) -> Any | None:
+    def _notify_controller_whisper(room_id: str, text: str) -> ControllerNotifyResult:
         room = store.get_room(room_id)
         controller = next(
-            (agent for agent in room.agents if agent.template_id == "controller" and agent.pane_id),
+            (agent for agent in room.agents if agent.template_id == "controller"),
             None,
         )
         if not controller:
-            return store.add_controller_message(
+            return ControllerNotifyResult(
+                store.add_controller_message(
+                    room_id,
+                    "system",
+                    "system",
+                    "System",
+                    "Controller unavailable. The whisper was saved, but no controller agent exists.",
+                )
+            )
+        if controller.pane_id and not tmux.has_agent_exited(controller):
+            try:
+                tmux.send_controller_whisper(controller, text)
+                return ControllerNotifyResult()
+            except TmuxError:
+                pass
+        try:
+            pane_id, session_id = tmux.resume_controller(controller, text)
+        except TmuxError as exc:
+            return ControllerNotifyResult(store.add_controller_message(room_id, "system", "system", "System", str(exc)))
+        updated = store.update_agent(
+            room_id,
+            controller.id,
+            {
+                "state": "active",
+                "pane_id": pane_id,
+                "codex_session_id": session_id,
+                "reason": "controller resumed for private message",
+            },
+            "system",
+            "agent.resumed",
+        )
+        return ControllerNotifyResult(
+            store.add_controller_message(
                 room_id,
                 "system",
                 "system",
                 "System",
-                "Controller pane unavailable. The whisper was saved, but no running controller pane received it.",
-            )
-        try:
-            tmux.send_controller_whisper(controller, text)
-        except TmuxError as exc:
-            return store.add_controller_message(room_id, "system", "system", "System", str(exc))
-        return None
+                "Controller resumed for private message.",
+            ),
+            updated,
+        )
 
     def _stop_room_panes(room_id: str, actor_id: str, reason: str, force: bool, keep_controller: bool) -> None:
         room = store.get_room(room_id)

@@ -20,6 +20,8 @@ def agent_instance(
     template_id: str,
     state: str,
     pane_id: str | None,
+    runtime_dir: str | None = None,
+    codex_session_id: str | None = None,
 ) -> AgentInstance:
     return AgentInstance(
         id=agent_id,
@@ -33,7 +35,8 @@ def agent_instance(
         avatar_url=f"/api/templates/{template_id}/avatar",
         state=state,  # type: ignore[arg-type]
         pane_id=pane_id,
-        runtime_dir=None,
+        runtime_dir=runtime_dir,
+        codex_session_id=codex_session_id,
     )
 
 
@@ -331,6 +334,49 @@ def test_controller_private_message_notifies_controller_pane(tmp_path, monkeypat
 
     assert response.status_code == 200
     assert calls == [("controller-1", "%1", "Check privately")]
+
+
+def test_controller_private_message_resumes_stopped_controller(tmp_path, monkeypatch) -> None:
+    calls = []
+
+    def fake_resume(_manager, agent, text):
+        calls.append((agent.id, agent.pane_id, text))
+        return "%9", "11111111-2222-3333-4444-555555555555"
+
+    monkeypatch.setattr(TmuxManager, "resume_controller", fake_resume)
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+    room = client.get("/api/rooms").json()[0]
+    write_room_agents(
+        tmp_path,
+        room["id"],
+        [agent_instance("controller-1", "controller", "stopped", None, str(tmp_path / "runtime" / "controller"))],
+    )
+
+    response = client.post(
+        f"/api/rooms/{room['id']}/controller/messages",
+        json={
+            "actor_type": "user",
+            "actor_id": "user",
+            "actor_name": "User",
+            "text": "Follow up",
+            "kind": "message",
+        },
+    )
+
+    assert response.status_code == 200
+    assert calls == [("controller-1", None, "Follow up")]
+    updated = client.get(f"/api/rooms/{room['id']}").json()
+    controller = updated["agents"][0]
+    assert controller["state"] == "active"
+    assert controller["pane_id"] == "%9"
+    assert controller["codex_session_id"] == "11111111-2222-3333-4444-555555555555"
+    private_messages = client.get(f"/api/rooms/{room['id']}/controller/messages").json()
+    assert [message["text"] for message in private_messages] == [
+        "Follow up",
+        "Controller resumed for private message.",
+    ]
 
 
 def test_closed_discussion_blocks_regular_agent_posts_but_allows_controller_and_user(tmp_path) -> None:
