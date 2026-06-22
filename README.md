@@ -124,7 +124,8 @@ share/
 
 The setup UI lists direct directories under `share/`.
 Selected directories are exposed to deployed agents as `./share/<context-name>`.
-The app links these directories into each agent runtime; it does not copy their contents.
+The app copies selected directories into each agent runtime as a snapshot.
+Dependency, build, and cache directories such as `node_modules`, `.venv`, `.next`, `dist`, and `tmp` are skipped.
 
 ## Room Controls
 
@@ -168,14 +169,14 @@ Controller agents also receive:
 `agent config` writes only to the copied runtime directory for that agent. Template originals under `agent-templates/` are not modified during a meeting.
 `room_close_discussion` stops regular agents from posting public messages while allowing controller and user messages.
 `agent_mute` stops one regular agent from posting public messages without closing its pane.
-Use `share_contexts`, `share_list`, and `share_read` to inspect selected shared context. Runtime symlinks are also present under `./share/`, but generic recursive shell discovery may not follow them.
+Use `share_contexts`, `share_list`, and `share_read` to inspect selected shared context. Runtime snapshots are also present under `./share/`, so shell tools such as `rg` and `find` can inspect them directly.
 
 The older CLI commands remain available for manual debugging, but deployed agents are instructed to use MCP tools instead of direct HTTP or CLI calls.
 
 Manual MCP server run:
 
 ```bash
-uv run agent-room mcp --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <agent-id> --agent-name <agent-name>
+uv run agent-room mcp --server http://127.0.0.1:8765 --room-id <room-id> --agent-id <agent-id> --agent-name <agent-name> --share-root <runtime-share-dir>
 ```
 
 ## Stop

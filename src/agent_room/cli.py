@@ -32,6 +32,7 @@ def main() -> None:
     mcp.add_argument("--room-id", required=True)
     mcp.add_argument("--agent-id", required=True)
     mcp.add_argument("--agent-name", required=True)
+    mcp.add_argument("--share-root", required=True)
     mcp.add_argument("--controller", action="store_true")
 
     room = subparsers.add_parser("room")
@@ -147,6 +148,7 @@ def handle_mcp(args: argparse.Namespace) -> None:
         room_id=args.room_id,
         agent_id=args.agent_id,
         agent_name=args.agent_name,
+        share_root=Path(args.share_root).resolve(),
         is_controller=args.controller,
         request_fn=mcp_request,
     )

@@ -19,6 +19,7 @@ def create_agent_room_mcp(
     room_id: str,
     agent_id: str,
     agent_name: str,
+    share_root: Path,
     is_controller: bool,
     request_fn: RequestFn,
 ) -> FastMCP:
@@ -33,6 +34,7 @@ def create_agent_room_mcp(
     call = request_fn
     base_url = server_url.rstrip("/")
     actor_type = "controller" if is_controller else "agent"
+    resolved_share_root = share_root.resolve()
 
     def url(path: str) -> str:
         return f"{base_url}{path}"
@@ -47,9 +49,8 @@ def create_agent_room_mcp(
             raise ValueError(f"share context not selected: {context_name}")
         if Path(context_name).name != context_name:
             raise ValueError(f"share context must be a directory name: {context_name}")
-        root = (Path.cwd() / "share" / context_name).resolve()
-        share_root = (Path.cwd() / "share").resolve()
-        if share_root not in root.parents:
+        root = (resolved_share_root / context_name).resolve()
+        if resolved_share_root not in root.parents:
             raise ValueError(f"share context path escapes share root: {context_name}")
         if not root.is_dir():
             raise ValueError(f"share context not found: {context_name}")

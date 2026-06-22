@@ -19,21 +19,32 @@ def test_link_shared_auth(tmp_path) -> None:
     assert linked.resolve() == auth_file
 
 
-def test_link_share_contexts_links_selected_directories(tmp_path) -> None:
+def test_copy_share_contexts_copies_selected_directories(tmp_path) -> None:
     project_root = tmp_path / "project"
     source = project_root / "share" / "alpha"
     source.mkdir(parents=True)
+    (source / "README.md").write_text("Alpha context\n", encoding="utf-8")
+    (source / "node_modules").mkdir()
+    (source / "node_modules" / "dependency.js").write_text("ignored\n", encoding="utf-8")
+    (source / ".venv").mkdir()
+    (source / ".venv" / "python").write_text("ignored\n", encoding="utf-8")
+    (source / "src").mkdir()
+    (source / "src" / "main.py").write_text("print('alpha')\n", encoding="utf-8")
     auth_file = tmp_path / "auth.json"
     auth_file.write_text("{}", encoding="utf-8")
     runtime_dir = tmp_path / "runtime" / "agent"
     runtime_dir.mkdir(parents=True)
     manager = TmuxManager(project_root, tmp_path, auth_file)
 
-    manager._link_share_contexts(runtime_dir, ["alpha"])
+    manager._copy_share_contexts(runtime_dir, ["alpha"])
 
-    link = runtime_dir / "share" / "alpha"
-    assert link.is_symlink()
-    assert link.resolve() == source
+    copied = runtime_dir / "share" / "alpha"
+    assert copied.is_dir()
+    assert not copied.is_symlink()
+    assert (copied / "README.md").read_text(encoding="utf-8") == "Alpha context\n"
+    assert (copied / "src" / "main.py").is_file()
+    assert not (copied / "node_modules").exists()
+    assert not (copied / ".venv").exists()
 
 
 def test_trust_project_adds_runtime_trust_once(tmp_path) -> None:
@@ -97,6 +108,7 @@ def test_configure_mcp_adds_controller_tools(tmp_path, monkeypatch) -> None:
     assert "[mcp_servers.agent_room]" in text
     assert 'command = "uv"' in text
     assert '"agent-room", "mcp"' in text
+    assert '"--share-root"' in text
     assert '"--controller"' in text
     assert '"controller_read"' in text
     assert '"agent_config"' in text
@@ -146,6 +158,7 @@ def test_configure_mcp_limits_regular_agent_tools(tmp_path, monkeypatch) -> None
 
     text = config_path.read_text(encoding="utf-8")
     assert '"room_read", "room_post", "room_done", "share_contexts", "share_list", "share_read"' in text
+    assert '"--share-root"' in text
     assert '"--controller"' not in text
     assert '"controller_read"' not in text
     assert '"agent_config"' not in text
@@ -250,9 +263,11 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "Controller Termination:\nController done" in controller_prompt
     assert "Agent Termination:\nAgents done" in controller_prompt
     assert "./share/alpha" in controller_prompt
+    assert "copied runtime snapshots" in controller_prompt
     assert "Controller Termination:" not in agent_prompt
     assert "Agent Termination:\nAgents done" in agent_prompt
     assert "./share/alpha" in agent_prompt
+    assert "copied runtime snapshots" in agent_prompt
     assert "Agent Room MCP tools" in controller_prompt
     assert "share_contexts" in controller_prompt
     assert "share_list" in controller_prompt

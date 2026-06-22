@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from fastmcp import Client
 
@@ -21,6 +23,7 @@ async def test_regular_agent_mcp_tools_post_as_agent() -> None:
         room_id="room-1",
         agent_id="critic-1",
         agent_name="Critic",
+        share_root=Path.cwd() / "share",
         is_controller=False,
         request_fn=fake_request,
     )
@@ -42,9 +45,8 @@ async def test_regular_agent_mcp_tools_post_as_agent() -> None:
     assert calls[-1][1] == "http://server/api/rooms/room-1/messages"
 
 
-async def test_share_mcp_tools_read_selected_context(tmp_path, monkeypatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    context = tmp_path / "share" / "alpha"
+async def test_share_mcp_tools_read_selected_context(tmp_path) -> None:
+    context = tmp_path / "runtime" / "share" / "alpha"
     context.mkdir(parents=True)
     (context / "README.md").write_text("Alpha context\n", encoding="utf-8")
 
@@ -58,6 +60,7 @@ async def test_share_mcp_tools_read_selected_context(tmp_path, monkeypatch) -> N
         room_id="room-1",
         agent_id="critic-1",
         agent_name="Critic",
+        share_root=tmp_path / "runtime" / "share",
         is_controller=False,
         request_fn=fake_request,
     )
@@ -92,6 +95,7 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
         room_id="room-1",
         agent_id="controller-1",
         agent_name="Controller",
+        share_root=Path.cwd() / "share",
         is_controller=True,
         request_fn=fake_request,
     )
