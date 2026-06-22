@@ -145,7 +145,7 @@ def test_configure_mcp_limits_regular_agent_tools(tmp_path, monkeypatch) -> None
     manager._configure_mcp(runtime_dir, room, agent, "critic-1")
 
     text = config_path.read_text(encoding="utf-8")
-    assert '"room_read", "room_post", "room_done"' in text
+    assert '"room_read", "room_post", "room_done", "share_contexts", "share_list", "share_read"' in text
     assert '"--controller"' not in text
     assert '"controller_read"' not in text
     assert '"agent_config"' not in text
@@ -254,11 +254,17 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "Agent Termination:\nAgents done" in agent_prompt
     assert "./share/alpha" in agent_prompt
     assert "Agent Room MCP tools" in controller_prompt
+    assert "share_contexts" in controller_prompt
+    assert "share_list" in controller_prompt
+    assert "share_read" in controller_prompt
     assert "room_close_discussion" in controller_prompt
     assert "agent_mute" in controller_prompt
     assert "uv run agent-room room" not in controller_prompt
     assert "room_close_discussion" not in agent_prompt
     assert "agent_mute" not in agent_prompt
+    assert "share_contexts" in agent_prompt
+    assert "share_list" in agent_prompt
+    assert "share_read" in agent_prompt
     assert "uv run agent-room room" not in agent_prompt
 
 

@@ -30,7 +30,7 @@ async def test_regular_agent_mcp_tools_post_as_agent() -> None:
         names = {tool.name for tool in tools}
         result = await client.call_tool("room_post", {"text": "Public"})
 
-    assert names == {"room_read", "room_post", "room_done"}
+    assert names == {"room_read", "room_post", "room_done", "share_contexts", "share_list", "share_read"}
     assert result.data["payload"] == {
         "actor_type": "agent",
         "actor_id": "critic-1",
@@ -40,6 +40,44 @@ async def test_regular_agent_mcp_tools_post_as_agent() -> None:
     }
     assert calls[-1][0] == "POST"
     assert calls[-1][1] == "http://server/api/rooms/room-1/messages"
+
+
+async def test_share_mcp_tools_read_selected_context(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    context = tmp_path / "share" / "alpha"
+    context.mkdir(parents=True)
+    (context / "README.md").write_text("Alpha context\n", encoding="utf-8")
+
+    def fake_request(method, url, payload):
+        if method == "GET" and url == "http://server/api/rooms/room-1":
+            return {"share_contexts": ["alpha"]}
+        return {"ok": True, "payload": payload}
+
+    mcp = create_agent_room_mcp(
+        server_url="http://server",
+        room_id="room-1",
+        agent_id="critic-1",
+        agent_name="Critic",
+        is_controller=False,
+        request_fn=fake_request,
+    )
+
+    async with Client(mcp) as client:
+        contexts = await client.call_tool("share_contexts", {})
+        items = await client.call_tool("share_list", {"context_name": "alpha", "relative_path": "."})
+        content = await client.call_tool("share_read", {"context_name": "alpha", "relative_path": "README.md"})
+
+    assert contexts.data == ["alpha"]
+    assert items.data == [
+        {
+            "name": "README.md",
+            "relative_path": "README.md",
+            "type": "file",
+            "size": len("Alpha context\n"),
+        }
+    ]
+    assert content.data["content"] == "Alpha context\n"
+    assert content.data["truncated"] is False
 
 
 async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> None:
@@ -70,6 +108,9 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
         "room_read",
         "room_post",
         "room_done",
+        "share_contexts",
+        "share_list",
+        "share_read",
         "controller_read",
         "controller_post",
         "agent_deploy",

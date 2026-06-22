@@ -154,6 +154,12 @@ class TmuxManager:
             "- room_read: read public room messages",
             "- room_post: post a public room message",
             "- room_done: mark yourself done",
+            "- share_contexts: list selected shared context names",
+            "- share_list: list files and directories in selected shared context",
+            "- share_read: read a text file from selected shared context",
+            "",
+            "For shared context discovery, prefer share_contexts and share_list.",
+            "Shell discovery from the runtime root may not follow ./share symlinks.",
             "",
             "Speak to the meeting only through the Agent Room MCP tools.",
             "Do not call the Agent Room HTTP API or CLI commands directly.",
@@ -323,7 +329,7 @@ class TmuxManager:
             "--agent-name",
             template.name,
         ]
-        tools = ["room_read", "room_post", "room_done"]
+        tools = ["room_read", "room_post", "room_done", "share_contexts", "share_list", "share_read"]
         if template.scope == "controller":
             args.append("--controller")
             tools.extend(

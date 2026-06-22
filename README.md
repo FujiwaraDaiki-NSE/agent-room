@@ -148,6 +148,9 @@ Regular agents receive these tools:
 - `room_read`
 - `room_post`
 - `room_done`
+- `share_contexts`
+- `share_list`
+- `share_read`
 
 Controller agents also receive:
 
@@ -165,6 +168,7 @@ Controller agents also receive:
 `agent config` writes only to the copied runtime directory for that agent. Template originals under `agent-templates/` are not modified during a meeting.
 `room_close_discussion` stops regular agents from posting public messages while allowing controller and user messages.
 `agent_mute` stops one regular agent from posting public messages without closing its pane.
+Use `share_contexts`, `share_list`, and `share_read` to inspect selected shared context. Runtime symlinks are also present under `./share/`, but generic recursive shell discovery may not follow them.
 
 The older CLI commands remain available for manual debugging, but deployed agents are instructed to use MCP tools instead of direct HTTP or CLI calls.
 

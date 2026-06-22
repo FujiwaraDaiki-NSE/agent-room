@@ -5,6 +5,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
@@ -35,6 +36,31 @@ def create_agent_room_mcp(
 
     def url(path: str) -> str:
         return f"{base_url}{path}"
+
+    def selected_share_contexts() -> list[str]:
+        room = call("GET", url(f"/api/rooms/{room_id}"), None)
+        return list(room.get("share_contexts", []))
+
+    def context_root(context_name: str) -> Path:
+        contexts = selected_share_contexts()
+        if context_name not in contexts:
+            raise ValueError(f"share context not selected: {context_name}")
+        if Path(context_name).name != context_name:
+            raise ValueError(f"share context must be a directory name: {context_name}")
+        root = (Path.cwd() / "share" / context_name).resolve()
+        share_root = (Path.cwd() / "share").resolve()
+        if share_root not in root.parents:
+            raise ValueError(f"share context path escapes share root: {context_name}")
+        if not root.is_dir():
+            raise ValueError(f"share context not found: {context_name}")
+        return root
+
+    def context_path(context_name: str, relative_path: str) -> Path:
+        root = context_root(context_name)
+        target = (root / relative_path).resolve()
+        if target != root and root not in target.parents:
+            raise ValueError("share path must stay inside the selected context")
+        return target
 
     @mcp.tool
     def room_read(after_id: int | None = None) -> list[dict[str, Any]]:
@@ -91,6 +117,73 @@ def create_agent_room_mcp(
         """
         payload = {"actor_id": agent_id, "reason": reason}
         return call("POST", url(f"/api/rooms/{room_id}/agents/{agent_id}/done"), payload)
+
+    @mcp.tool
+    def share_contexts() -> list[str]:
+        """List selected shared context names for this room.
+
+        Use this before reading shared files. Only contexts selected when the
+        room was created are returned.
+
+        Returns:
+            Selected shared context names.
+        """
+        return selected_share_contexts()
+
+    @mcp.tool
+    def share_list(context_name: str, relative_path: str) -> list[dict[str, Any]]:
+        """List files and directories inside a selected shared context.
+
+        Args:
+            context_name: Selected context name such as design_db.
+            relative_path: Context-relative directory path. Use "." for root.
+
+        Returns:
+            Direct children with name, relative_path, type, and size.
+        """
+        target = context_path(context_name, relative_path)
+        if not target.is_dir():
+            raise ValueError(f"share path is not a directory: {relative_path}")
+        root = context_root(context_name)
+        items = []
+        for child in sorted(target.iterdir(), key=lambda item: item.name):
+            item_type = "dir" if child.is_dir() else "file"
+            size = child.stat().st_size if child.is_file() else None
+            items.append(
+                {
+                    "name": child.name,
+                    "relative_path": str(child.relative_to(root)),
+                    "type": item_type,
+                    "size": size,
+                }
+            )
+        return items
+
+    @mcp.tool
+    def share_read(context_name: str, relative_path: str) -> dict[str, Any]:
+        """Read a text file from a selected shared context.
+
+        Args:
+            context_name: Selected context name such as design_db.
+            relative_path: Context-relative file path.
+
+        Returns:
+            File content and truncation metadata.
+        """
+        target = context_path(context_name, relative_path)
+        if not target.is_file():
+            raise ValueError(f"share path is not a file: {relative_path}")
+        data = target.read_bytes()
+        limit = 60_000
+        truncated = len(data) > limit
+        text = data[:limit].decode("utf-8", errors="replace")
+        return {
+            "context_name": context_name,
+            "relative_path": str(target.relative_to(context_root(context_name))),
+            "content": text,
+            "truncated": truncated,
+            "bytes": len(data),
+        }
 
     if is_controller:
 

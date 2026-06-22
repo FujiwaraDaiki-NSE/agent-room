@@ -78,6 +78,9 @@ Use Agent Room MCP tools only. Do not call the Agent Room HTTP API or CLI direct
 - `room_read`
 - `room_post`
 - `room_done`
+- `share_contexts`
+- `share_list`
+- `share_read`
 - `controller_read`
 - `controller_post`
 - `agent_deploy`
