@@ -105,6 +105,17 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
         names = {tool.name for tool in tools}
         schema_by_name = {tool.name: tool.inputSchema for tool in tools}
         result = await client.call_tool("controller_post", {"text": "Private"})
+        status_result = await client.call_tool(
+            "room_status_update",
+            {
+                "phase": "Synthesis",
+                "topic": "Evidence registry",
+                "summary": "Converging on traceability.",
+                "decisions": ["Use registry"],
+                "open_questions": ["Owner granularity"],
+                "next": "Ask final objections",
+            },
+        )
         close_result = await client.call_tool("room_close_discussion", {"reason": "final summary"})
         mute_result = await client.call_tool("agent_mute", {"target_agent_id": "critic-1", "reason": "over limit"})
 
@@ -121,6 +132,7 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
         "agent_stop",
         "agent_goal",
         "agent_config",
+        "room_status_update",
         "room_close_discussion",
         "room_open_discussion",
         "agent_mute",
@@ -128,11 +140,30 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
     } == names
     assert schema_by_name["agent_deploy"]["required"] == ["template_id", "count"]
     assert schema_by_name["agent_stop"]["required"] == ["target_agent_id", "reason", "force"]
+    assert schema_by_name["room_status_update"]["required"] == [
+        "phase",
+        "topic",
+        "summary",
+        "decisions",
+        "open_questions",
+        "next",
+    ]
     assert schema_by_name["room_close_discussion"]["required"] == ["reason"]
     assert schema_by_name["agent_mute"]["required"] == ["target_agent_id", "reason"]
     assert result.data["payload"]["actor_type"] == "controller"
+    assert status_result.data["payload"] == {
+        "actor_id": "controller-1",
+        "phase": "Synthesis",
+        "topic": "Evidence registry",
+        "summary": "Converging on traceability.",
+        "decisions": ["Use registry"],
+        "open_questions": ["Owner granularity"],
+        "next": "Ask final objections",
+    }
     assert close_result.data["payload"] == {"actor_id": "controller-1", "reason": "final summary"}
     assert mute_result.data["payload"] == {"actor_id": "controller-1", "reason": "over limit"}
-    assert calls[-3][1] == "http://server/api/rooms/room-1/controller/messages"
+    assert calls[-4][1] == "http://server/api/rooms/room-1/controller/messages"
+    assert calls[-3][0] == "PUT"
+    assert calls[-3][1] == "http://server/api/rooms/room-1/status"
     assert calls[-2][1] == "http://server/api/rooms/room-1/discussion/close"
     assert calls[-1][1] == "http://server/api/rooms/room-1/agents/critic-1/mute"

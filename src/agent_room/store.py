@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import AgentInstance, ActorType, Event, Message, Room, RoomState
+from .models import AgentInstance, ActorType, Event, MeetingStatus, Message, Room, RoomState
 
 
 AUTO_ROOM_NAME = "Room"
@@ -15,6 +15,18 @@ AUTO_ROOM_NAME = "Room"
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def meeting_status(phase: str, topic: str, summary: str, next_step: str, updated_at: str | None) -> MeetingStatus:
+    return MeetingStatus(
+        phase=phase,
+        topic=topic,
+        summary=summary,
+        decisions=[],
+        open_questions=[],
+        next=next_step,
+        updated_at=updated_at,
+    )
 
 
 class Store:
@@ -95,6 +107,7 @@ class Store:
             room.agent_posting_closed = False
             room.muted_agent_ids = []
             room.state = state
+            room.meeting_status = meeting_status(self._room_state_label(state), goal, "", "Controller", None)
             room.agents = []
             data["rooms"] = {room.id: room.model_dump()}
             data["messages"] = {room.id: []}
@@ -112,6 +125,47 @@ class Store:
             )
             self._write(data)
         return room
+
+    def update_meeting_status(
+        self,
+        room_id: str,
+        actor_id: str,
+        phase: str,
+        topic: str,
+        summary: str,
+        decisions: list[str],
+        open_questions: list[str],
+        next_step: str,
+    ) -> Room:
+        self._require("actor_id", actor_id)
+        self._require("phase", phase)
+        self._require("topic", topic)
+        self._require("summary", summary)
+        self._require("next", next_step)
+        with self.lock:
+            data = self._read()
+            room = self._room(data, room_id)
+            room.meeting_status = MeetingStatus(
+                phase=phase,
+                topic=topic,
+                summary=summary,
+                decisions=decisions,
+                open_questions=open_questions,
+                next=next_step,
+                updated_at=now_iso(),
+            )
+            data["rooms"][room_id] = room.model_dump()
+            self._append_event(
+                data,
+                room_id,
+                "room.status_updated",
+                actor_id,
+                room_id,
+                None,
+                room.meeting_status.model_dump(),
+            )
+            self._write(data)
+            return room
 
     def set_agent_posting_closed(self, room_id: str, closed: bool, actor_id: str, reason: str) -> Room:
         with self.lock:
@@ -185,6 +239,12 @@ class Store:
             data = self._read()
             room = self._room(data, room_id)
             room.state = state
+            if room.meeting_status.updated_at is None:
+                room.meeting_status.phase = self._room_state_label(state)
+                if not room.meeting_status.topic:
+                    room.meeting_status.topic = room.goal
+                if state == "open":
+                    room.meeting_status.next = "Controller"
             data["rooms"][room_id] = room.model_dump()
             self._append_event(data, room_id, self._room_state_event_type(state), actor_id, room_id, reason, {})
             self._write(data)
@@ -348,6 +408,14 @@ class Store:
                 room["agent_posting_closed"] = False
             if "muted_agent_ids" not in room:
                 room["muted_agent_ids"] = []
+            if "meeting_status" not in room:
+                room["meeting_status"] = meeting_status(
+                    self._room_state_label(room.get("state", "draft")),
+                    room.get("goal", ""),
+                    "",
+                    "Controller" if room.get("state") == "open" else "",
+                    None,
+                ).model_dump()
             if room_id not in data["messages"]:
                 data["messages"][room_id] = []
             if room_id not in data["controller_messages"]:
@@ -382,6 +450,7 @@ class Store:
             muted_agent_ids=[],
             state=state,
             created_at=now_iso(),
+            meeting_status=meeting_status(self._room_state_label(state), goal, "", "", None),
             agents=[],
         )
 
@@ -389,3 +458,6 @@ class Store:
         if state == "open":
             return "room.started"
         return f"room.{state}"
+
+    def _room_state_label(self, state: str) -> str:
+        return state[:1].upper() + state[1:]

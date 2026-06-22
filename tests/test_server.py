@@ -67,6 +67,9 @@ def test_api_room_without_agents(tmp_path) -> None:
     assert room["agent_posting_closed"] is False
     assert room["muted_agent_ids"] == []
     assert room["state"] == "open"
+    assert room["meeting_status"]["phase"] == "Open"
+    assert room["meeting_status"]["topic"] == "Discuss architecture"
+    assert room["meeting_status"]["next"] == "Controller"
     assert room["agents"] == []
 
     messages = client.get(f"/api/rooms/{room['id']}/messages").json()
@@ -212,6 +215,90 @@ def test_controller_private_messages_are_separate(tmp_path, monkeypatch) -> None
     assert client.get(f"/api/rooms/{room['id']}/messages").json() == []
     private_messages = client.get(f"/api/rooms/{room['id']}/controller/messages").json()
     assert [message["text"] for message in private_messages] == ["Private"]
+
+
+def test_controller_updates_meeting_status(tmp_path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+    room = client.post(
+        "/api/rooms",
+        json={
+            "name": "Design",
+            "goal": "Discuss architecture",
+            "controller_termination": "Controller closes the room",
+            "agent_termination": "Each agent is done",
+            "share_contexts": [],
+            "templates": [],
+        },
+    ).json()
+    write_room_agents(
+        tmp_path,
+        room["id"],
+        [
+            agent_instance("controller-1", "controller", "active", "%1"),
+            agent_instance("critic-1", "critic", "active", "%2"),
+        ],
+    )
+
+    response = client.put(
+        f"/api/rooms/{room['id']}/status",
+        json={
+            "actor_id": "controller-1",
+            "phase": "Synthesis",
+            "topic": "Evidence registry",
+            "summary": "The discussion is converging on traceability.",
+            "decisions": ["Use an evidence registry"],
+            "open_questions": ["Owner granularity"],
+            "next": "Ask for final objections",
+        },
+    )
+
+    assert response.status_code == 200
+    status = response.json()["meeting_status"]
+    assert status["phase"] == "Synthesis"
+    assert status["topic"] == "Evidence registry"
+    assert status["summary"] == "The discussion is converging on traceability."
+    assert status["decisions"] == ["Use an evidence registry"]
+    assert status["open_questions"] == ["Owner granularity"]
+    assert status["next"] == "Ask for final objections"
+    assert status["updated_at"]
+    events = client.get(f"/api/rooms/{room['id']}/events").json()
+    assert events[-1]["type"] == "room.status_updated"
+
+
+def test_regular_agent_cannot_update_meeting_status(tmp_path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+    room = client.post(
+        "/api/rooms",
+        json={
+            "name": "Design",
+            "goal": "Discuss architecture",
+            "controller_termination": "Controller closes the room",
+            "agent_termination": "Each agent is done",
+            "share_contexts": [],
+            "templates": [],
+        },
+    ).json()
+    write_room_agents(tmp_path, room["id"], [agent_instance("critic-1", "critic", "active", "%2")])
+
+    response = client.put(
+        f"/api/rooms/{room['id']}/status",
+        json={
+            "actor_id": "critic-1",
+            "phase": "Synthesis",
+            "topic": "Evidence registry",
+            "summary": "The discussion is converging.",
+            "decisions": [],
+            "open_questions": [],
+            "next": "Continue",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "meeting status can only be updated by controller" in response.json()["detail"]
 
 
 def test_controller_private_message_notifies_controller_pane(tmp_path, monkeypatch) -> None:

@@ -138,7 +138,7 @@ Room start waits for these runtime copies and agent deployment to finish before 
 The app keeps only one current room. Use `New` to clear the public log and controller private log by replacing the room.
 The room name is internal and hidden in the GUI.
 After `Start`, the top brief keeps `Goal`, `Controller Termination`, and `Agent Termination` visible.
-The live room shows a status strip, participant roster, round table, and activity rail.
+The live room shows controller-managed meeting status, a compact participant roster, round table, bottom progress strip, and activity rail.
 
 The `Controller` tab is private. Use it for instructions or whispers that should go only to the controller.
 
@@ -162,12 +162,14 @@ Controller agents also receive:
 - `agent_stop`
 - `agent_goal`
 - `agent_config`
+- `room_status_update`
 - `room_close_discussion`
 - `room_open_discussion`
 - `agent_mute`
 - `agent_unmute`
 
 `agent config` writes only to the copied runtime directory for that agent. Template originals under `agent-templates/` are not modified during a meeting.
+`room_status_update` updates the left-side `Meeting` panel and bottom progress strip for the user.
 `room_close_discussion` stops regular agents from posting public messages while allowing controller and user messages.
 `agent_mute` stops one regular agent from posting public messages without closing its pane.
 Use `share_contexts`, `share_list`, and `share_read` to inspect selected shared context. Runtime snapshots are also present under `./share/`, so shell tools such as `rg` and `find` can inspect them directly.

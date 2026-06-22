@@ -5,6 +5,17 @@ from agent_room.models import AgentTemplate, Room
 from agent_room.tmux_manager import TmuxManager
 
 
+MEETING_STATUS = {
+    "phase": "Open",
+    "topic": "Discuss",
+    "summary": "Running",
+    "decisions": [],
+    "open_questions": [],
+    "next": "Controller",
+    "updated_at": None,
+}
+
+
 def test_link_shared_auth(tmp_path) -> None:
     auth_file = tmp_path / "auth.json"
     auth_file.write_text("{}", encoding="utf-8")
@@ -84,6 +95,7 @@ def test_configure_mcp_adds_controller_tools(tmp_path, monkeypatch) -> None:
         muted_agent_ids=[],
         state="open",
         created_at="2026-06-19T00:00:00+00:00",
+        meeting_status=MEETING_STATUS,
         agents=[],
     )
     controller = AgentTemplate.model_validate(
@@ -112,6 +124,7 @@ def test_configure_mcp_adds_controller_tools(tmp_path, monkeypatch) -> None:
     assert '"--controller"' in text
     assert '"controller_read"' in text
     assert '"agent_config"' in text
+    assert '"room_status_update"' in text
     assert '"room_close_discussion"' in text
     assert '"agent_mute"' in text
 
@@ -136,6 +149,7 @@ def test_configure_mcp_limits_regular_agent_tools(tmp_path, monkeypatch) -> None
         muted_agent_ids=[],
         state="open",
         created_at="2026-06-19T00:00:00+00:00",
+        meeting_status=MEETING_STATUS,
         agents=[],
     )
     agent = AgentTemplate.model_validate(
@@ -162,6 +176,7 @@ def test_configure_mcp_limits_regular_agent_tools(tmp_path, monkeypatch) -> None
     assert '"--controller"' not in text
     assert '"controller_read"' not in text
     assert '"agent_config"' not in text
+    assert '"room_status_update"' not in text
     assert '"room_close_discussion"' not in text
     assert '"agent_mute"' not in text
 
@@ -210,6 +225,7 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
         muted_agent_ids=[],
         state="open",
         created_at="2026-06-19T00:00:00+00:00",
+        meeting_status=MEETING_STATUS,
         agents=[],
     )
     controller = AgentTemplate.model_validate(
@@ -272,6 +288,7 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "share_contexts" in controller_prompt
     assert "share_list" in controller_prompt
     assert "share_read" in controller_prompt
+    assert "room_status_update" in controller_prompt
     assert "room_close_discussion" in controller_prompt
     assert "agent_mute" in controller_prompt
     assert "uv run agent-room room" not in controller_prompt
@@ -280,6 +297,7 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "share_contexts" in agent_prompt
     assert "share_list" in agent_prompt
     assert "share_read" in agent_prompt
+    assert "room_status_update" not in agent_prompt
     assert "uv run agent-room room" not in agent_prompt
 
 

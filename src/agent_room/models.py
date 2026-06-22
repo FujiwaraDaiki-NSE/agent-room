@@ -66,6 +66,16 @@ class Event(BaseModel):
     created_at: str
 
 
+class MeetingStatus(BaseModel):
+    phase: str
+    topic: str
+    summary: str
+    decisions: list[str]
+    open_questions: list[str]
+    next: str
+    updated_at: str | None
+
+
 class Room(BaseModel):
     id: str
     name: str
@@ -77,6 +87,7 @@ class Room(BaseModel):
     muted_agent_ids: list[str]
     state: RoomState
     created_at: str
+    meeting_status: MeetingStatus
     agents: list[AgentInstance]
 
 
@@ -126,3 +137,13 @@ class UpdateAgentConfigRequest(BaseModel):
     relative_path: str
     content: str
     reason: str
+
+
+class UpdateMeetingStatusRequest(BaseModel):
+    actor_id: str
+    phase: str
+    topic: str
+    summary: str
+    decisions: list[str]
+    open_questions: list[str]
+    next: str

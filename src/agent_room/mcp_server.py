@@ -29,7 +29,7 @@ def create_agent_room_mcp(
         "and mark yourself done only when your assigned termination condition is met."
     )
     if is_controller:
-        instructions += " Controller tools can manage agents and private user-side whispers."
+        instructions += " Controller tools can manage agents, meeting status, and private user-side whispers."
     mcp = FastMCP(name="Agent Room", instructions=instructions)
     call = request_fn
     base_url = server_url.rstrip("/")
@@ -316,6 +316,42 @@ def create_agent_room_mcp(
                 "reason": reason,
             }
             return call("POST", url(f"/api/rooms/{room_id}/agents/{target_agent_id}/config"), payload)
+
+        @mcp.tool
+        def room_status_update(
+            phase: str,
+            topic: str,
+            summary: str,
+            decisions: list[str],
+            open_questions: list[str],
+            next: str,
+        ) -> dict[str, Any]:
+            """Update the user-visible meeting status.
+
+            Use this before phase changes, after each round, and before the
+            final controller summary so the user can see where the meeting is.
+
+            Args:
+                phase: Current meeting phase.
+                topic: Active discussion topic.
+                summary: Short current summary.
+                decisions: Decisions already made.
+                open_questions: Important unresolved questions.
+                next: Next controller action.
+
+            Returns:
+                The updated room state.
+            """
+            payload = {
+                "actor_id": agent_id,
+                "phase": phase,
+                "topic": topic,
+                "summary": summary,
+                "decisions": decisions,
+                "open_questions": open_questions,
+                "next": next,
+            }
+            return call("PUT", url(f"/api/rooms/{room_id}/status"), payload)
 
         @mcp.tool
         def room_close_discussion(reason: str) -> dict[str, Any]:

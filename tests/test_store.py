@@ -8,6 +8,8 @@ def test_room_message_and_done_flow(tmp_path) -> None:
     assert len(store.list_rooms()) == 1
 
     room = store.create_room("Spec", "Discuss the design", "Controller done", "Agents done", [], "open")
+    assert room.meeting_status.phase == "Open"
+    assert room.meeting_status.topic == "Discuss the design"
 
     message = store.add_message(room.id, "user", "user", "User", "Start", "goal")
     assert message.id == 1
@@ -18,6 +20,29 @@ def test_room_message_and_done_flow(tmp_path) -> None:
     done = store.set_room_state(room.id, "done", "controller", "complete")
     assert done.state == "done"
     assert store.list_events(room.id)[-1].type == "room.done"
+
+
+def test_update_meeting_status_persists_status(tmp_path) -> None:
+    store = Store(tmp_path)
+    room = store.create_room("Spec", "Discuss", "Controller done", "Agents done", [], "open")
+
+    updated = store.update_meeting_status(
+        room.id,
+        "controller-1",
+        "Synthesis",
+        "Evidence registry",
+        "Converging on traceability.",
+        ["Use registry"],
+        ["Owner granularity"],
+        "Ask final objections",
+    )
+
+    assert updated.meeting_status.phase == "Synthesis"
+    assert updated.meeting_status.decisions == ["Use registry"]
+    assert updated.meeting_status.open_questions == ["Owner granularity"]
+    assert updated.meeting_status.updated_at
+    assert store.current_room().meeting_status.summary == "Converging on traceability."
+    assert store.list_events(room.id)[-1].type == "room.status_updated"
 
 
 def test_reset_keeps_single_room(tmp_path) -> None:
@@ -81,3 +106,5 @@ def test_old_termination_state_is_migrated(tmp_path) -> None:
     assert room.share_contexts == []
     assert room.agent_posting_closed is False
     assert room.muted_agent_ids == []
+    assert room.meeting_status.phase == "Open"
+    assert room.meeting_status.topic == "Discuss"

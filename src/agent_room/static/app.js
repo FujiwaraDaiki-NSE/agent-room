@@ -343,6 +343,8 @@ function renderRoom() {
   renderBrief(room);
   renderShareContexts();
   renderAgents(room ? room.agents : []);
+  renderMeetingStatus(room);
+  renderProgressStrip(room);
   renderRoster(room ? room.agents : []);
   renderMessageList("messages", state.messages, "No messages", false);
   renderMessageList("controllerMessages", state.controllerMessages, "No whispers", true);
@@ -356,6 +358,51 @@ function renderBrief(room) {
   $("briefAgentTermination").textContent = room && room.agent_termination ? room.agent_termination : "Draft";
   $("briefShareContexts").textContent =
     room && room.share_contexts && room.share_contexts.length ? room.share_contexts.join(", ") : "None";
+}
+
+function renderMeetingStatus(room) {
+  const status = room ? room.meeting_status : null;
+  $("meetingPhase").textContent = status ? status.phase : "Draft";
+  $("meetingTopic").textContent = status && status.topic ? status.topic : "None";
+  $("meetingSummary").textContent = status && status.summary ? status.summary : "Pending";
+  $("meetingNext").textContent = status && status.next ? status.next : "Controller";
+  $("meetingStatusUpdated").textContent = status && status.updated_at ? formatTime(status.updated_at) : "Pending";
+  renderStatusList("meetingDecisions", status ? status.decisions : [], "None");
+  renderStatusList("meetingOpenQuestions", status ? status.open_questions : [], "None");
+}
+
+function renderStatusList(targetId, items, emptyText) {
+  const list = $(targetId);
+  if (!items || !items.length) {
+    list.classList.add("emptyList");
+    list.innerHTML = `<li>${escapeHtml(emptyText)}</li>`;
+    return;
+  }
+  list.classList.remove("emptyList");
+  list.innerHTML = items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
+function renderProgressStrip(room) {
+  if (!room) {
+    $("progressStrip").textContent = "Progress";
+    return;
+  }
+  const status = room.meeting_status;
+  const agents = room.agents || [];
+  const activeCount = agents.filter((agent) => ["starting", "active", "speaking", "idle"].includes(agent.state)).length;
+  const doneCount = agents.filter((agent) => agent.state === "done").length;
+  const mutedCount = room.muted_agent_ids ? room.muted_agent_ids.length : 0;
+  const discussion = room.agent_posting_closed ? "Quiet" : "Open";
+  const parts = [
+    `${stateLabel(room.state)} / ${status ? status.phase : "Status"}`,
+    `Agents ${agents.length}`,
+    `Active ${activeCount}`,
+    `Done ${doneCount}`,
+    discussion,
+  ];
+  if (mutedCount) parts.push(`Muted ${mutedCount}`);
+  if (status && status.next) parts.push(`Next: ${status.next}`);
+  $("progressStrip").textContent = parts.join(" · ");
 }
 
 function renderControls() {

@@ -190,11 +190,13 @@ class TmuxManager:
                     "- agent_stop: stop an agent pane",
                     "- agent_goal: send a new goal to an agent",
                     "- agent_config: update an agent runtime config",
+                    "- room_status_update: update the user-visible meeting status",
                     "- room_close_discussion: close public discussion for regular agents",
                     "- room_open_discussion: reopen public discussion for regular agents",
                     "- agent_mute: mute one regular agent's public messages",
                     "- agent_unmute: unmute one regular agent's public messages",
                     "",
+                    "Use room_status_update before phase changes, after each round, and before final summaries.",
                     "Use controller tools for user-side whispers and lifecycle operations.",
                 ]
             )
@@ -358,6 +360,7 @@ class TmuxManager:
                     "agent_stop",
                     "agent_goal",
                     "agent_config",
+                    "room_status_update",
                     "room_close_discussion",
                     "room_open_discussion",
                     "agent_mute",

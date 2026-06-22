@@ -295,16 +295,21 @@ h2 {
   padding: 14px;
 }
 
-body[data-room-state="open"] .stage {
+body[data-room-state="starting"] .stage,
+body[data-room-state="open"] .stage,
+body[data-room-state="done"] .stage,
+body[data-room-state="stopped"] .stage {
   grid-template-columns: clamp(270px, 21vw, 320px) minmax(0, 1fr);
 }
 
+body[data-room-state="starting"] .controlRail,
 body[data-room-state="open"] .controlRail,
 body[data-room-state="done"] .controlRail,
 body[data-room-state="stopped"] .controlRail {
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: minmax(300px, 1.22fr) minmax(170px, 0.78fr);
 }
 
+body[data-room-state="starting"] .controlPanel,
 body[data-room-state="open"] .controlPanel,
 body[data-room-state="done"] .controlPanel,
 body[data-room-state="stopped"] .controlPanel {
@@ -319,6 +324,7 @@ body[data-room-state="stopped"] .controlPanel {
 }
 
 .controlPanel,
+.meetingStatusPanel,
 .rosterPanel,
 .roomDeck {
   min-height: 0;
@@ -334,6 +340,19 @@ body[data-room-state="stopped"] .controlPanel {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.meetingStatusPanel {
+  display: none;
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+body[data-room-state="starting"] .meetingStatusPanel,
+body[data-room-state="open"] .meetingStatusPanel,
+body[data-room-state="done"] .meetingStatusPanel,
+body[data-room-state="stopped"] .meetingStatusPanel {
+  display: grid;
 }
 
 body[data-room-state="open"] .controlPanel textarea {
@@ -355,6 +374,7 @@ body[data-room-state="open"] .controlPanel textarea {
   color: var(--muted);
 }
 
+.meetingStatusPanel .sectionHead,
 .rosterPanel .sectionHead {
   padding: 11px 12px 8px;
   border-bottom: 1px solid var(--line);
@@ -364,6 +384,62 @@ body[data-room-state="open"] .controlPanel textarea {
   color: var(--muted);
   font-size: 11px;
   font-weight: 720;
+}
+
+.meetingStatusBody {
+  min-height: 0;
+  overflow: auto;
+  padding: 11px 12px 12px;
+  display: grid;
+  align-content: start;
+  gap: 11px;
+}
+
+.statusPair,
+.statusBlock {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.statusPair span,
+.statusBlock span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.statusPair strong,
+.statusBlock p,
+.statusList {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.statusPair strong {
+  font-weight: 780;
+  overflow-wrap: anywhere;
+}
+
+.statusBlock p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.statusList {
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.statusList.emptyList {
+  padding-left: 0;
+  list-style: none;
+  color: var(--muted);
 }
 
 .field {
@@ -552,7 +628,7 @@ body[data-room-state="open"] .controlPanel textarea {
 
 .roomDeck {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
@@ -593,6 +669,20 @@ body[data-room-state="open"] .controlPanel textarea {
     linear-gradient(0deg, rgba(215, 222, 231, 0.55) 1px, transparent 1px),
     #f4f7f9;
   background-size: 32px 32px;
+}
+
+.progressStrip {
+  min-height: 38px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  background: #fbfcfd;
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .roundTable {
@@ -1049,6 +1139,7 @@ body[data-room-state="open"] .controlPanel textarea {
     overflow: visible;
   }
 
+  body[data-room-state="starting"] .stage,
   body[data-room-state="open"] .stage,
   body[data-room-state="done"] .stage,
   body[data-room-state="stopped"] .stage {
@@ -1059,10 +1150,11 @@ body[data-room-state="open"] .controlPanel textarea {
     grid-template-rows: auto minmax(180px, 260px);
   }
 
+  body[data-room-state="starting"] .controlRail,
   body[data-room-state="open"] .controlRail,
   body[data-room-state="done"] .controlRail,
   body[data-room-state="stopped"] .controlRail {
-    grid-template-rows: minmax(170px, 260px);
+    grid-template-rows: minmax(240px, auto) minmax(180px, 260px);
   }
 
   .roomDeck {

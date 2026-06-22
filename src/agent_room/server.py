@@ -15,6 +15,7 @@ from .models import (
     PostMessageRequest,
     StopAgentRequest,
     UpdateAgentConfigRequest,
+    UpdateMeetingStatusRequest,
 )
 from .store import Store
 from .templates import TemplateError, TemplateRegistry
@@ -196,6 +197,25 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             return [event.model_dump() for event in store.list_events(room_id)]
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.put("/api/rooms/{room_id}/status")
+    async def update_meeting_status(room_id: str, request: UpdateMeetingStatusRequest) -> dict[str, Any]:
+        try:
+            _require_controller_agent(room_id, request.actor_id)
+            room = store.update_meeting_status(
+                room_id,
+                request.actor_id,
+                request.phase,
+                request.topic,
+                request.summary,
+                request.decisions,
+                request.open_questions,
+                request.next,
+            )
+            await hub.broadcast(room_id, {"type": "room.status_updated", "room": room.model_dump()})
+            return room.model_dump()
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/rooms/{room_id}/agents")
     async def deploy_agent(room_id: str, request: DeployAgentRequest) -> dict[str, Any]:
@@ -438,6 +458,14 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             raise KeyError(f"agent not found: {agent_id}")
         if agent.template_id == "controller":
             raise ValueError("controller cannot be muted")
+
+    def _require_controller_agent(room_id: str, agent_id: str) -> None:
+        room = store.get_room(room_id)
+        agent = next((item for item in room.agents if item.id == agent_id), None)
+        if not agent:
+            raise KeyError(f"agent not found: {agent_id}")
+        if agent.template_id != "controller":
+            raise ValueError("meeting status can only be updated by controller")
 
     def _share_contexts() -> list[dict[str, str]]:
         if not share_root.is_dir():

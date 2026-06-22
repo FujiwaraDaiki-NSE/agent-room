@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Agent Room</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260622-discussion-control" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260622-meeting-status" />
   </head>
   <body>
     <main class="shell">
@@ -84,6 +84,39 @@
               <button id="startRoom" class="primary">Start</button>
             </section>
 
+            <section class="meetingStatusPanel">
+              <div class="sectionHead">
+                <h2>Meeting</h2>
+                <span id="meetingStatusUpdated">Pending</span>
+              </div>
+              <div class="meetingStatusBody">
+                <div class="statusPair">
+                  <span>Phase</span>
+                  <strong id="meetingPhase">Draft</strong>
+                </div>
+                <div class="statusPair">
+                  <span>Topic</span>
+                  <strong id="meetingTopic">None</strong>
+                </div>
+                <div class="statusBlock">
+                  <span>Summary</span>
+                  <p id="meetingSummary">Pending</p>
+                </div>
+                <div class="statusBlock">
+                  <span>Decisions</span>
+                  <ul id="meetingDecisions" class="statusList"></ul>
+                </div>
+                <div class="statusBlock">
+                  <span>Open</span>
+                  <ul id="meetingOpenQuestions" class="statusList"></ul>
+                </div>
+                <div class="statusBlock">
+                  <span>Next</span>
+                  <p id="meetingNext">Controller</p>
+                </div>
+              </div>
+            </section>
+
             <section class="rosterPanel">
               <div class="sectionHead">
                 <h2>Agents</h2>
@@ -114,6 +147,7 @@
                 <div id="agentLayer"></div>
               </div>
             </div>
+            <div id="progressStrip" class="progressStrip">Progress</div>
           </section>
         </section>
 
@@ -151,6 +185,6 @@
         </aside>
       </section>
     </main>
-    <script src="/static/app.js?v=20260622-discussion-control"></script>
+    <script src="/static/app.js?v=20260622-meeting-status"></script>
   </body>
 </html>
