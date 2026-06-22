@@ -40,6 +40,8 @@ async function boot() {
   $("refresh").addEventListener("click", () => runAction("Refresh", refresh));
   $("newRoom").addEventListener("click", () => runAction("New", resetRoom));
   $("startRoom").addEventListener("click", () => runAction("Start", startRoom));
+  $("selectAllTemplates").addEventListener("click", () => setTemplateChecks(true));
+  $("clearTemplates").addEventListener("click", () => setTemplateChecks(false));
   $("sendMessage").addEventListener("click", sendMessage);
   $("sendControllerMessage").addEventListener("click", sendControllerMessage);
   $("deployAgent").addEventListener("click", () => runAction("Deploy", deployAgent));
@@ -50,6 +52,7 @@ async function boot() {
   $("controllerTermination").addEventListener("input", renderControls);
   $("agentTermination").addEventListener("input", renderControls);
   $("shareContextList").addEventListener("change", renderControls);
+  $("templateList").addEventListener("change", renderControls);
   $("messageText").addEventListener("keydown", (event) => handleComposerKey(event, sendMessage));
   $("controllerText").addEventListener("keydown", (event) => handleComposerKey(event, sendControllerMessage));
   $("messageText").addEventListener("input", growComposer);
@@ -291,7 +294,6 @@ async function closeRoom() {
 }
 
 function renderTemplates() {
-  $("templateCount").textContent = `${state.templates.filter((template) => template.launch).length}`;
   $("templateList").innerHTML = state.templates
     .filter((template) => template.launch)
     .map(
@@ -307,6 +309,7 @@ function renderTemplates() {
       `,
     )
     .join("");
+  updateTemplateCount();
 }
 
 function renderShareContexts() {
@@ -419,6 +422,8 @@ function renderControls() {
   $("closeRoom").disabled = !isOpen || pending;
   $("newRoom").disabled = pending;
   $("refresh").disabled = pending;
+  $("selectAllTemplates").disabled = !isDraft || pending;
+  $("clearTemplates").disabled = !isDraft || pending;
   $("sendMessage").disabled = !room || pending;
   $("sendControllerMessage").disabled = !room || pending;
   $("goal").disabled = !isDraft || pending;
@@ -436,8 +441,22 @@ function renderControls() {
   $("deployAgent").textContent = state.pendingAction === "Deploy" ? "Deploying" : "Deploy";
   $("closeRoom").textContent = state.pendingAction === "Close" ? "Closing" : "Close";
   $("newRoom").textContent = state.pendingAction === "New" ? "Creating" : "New";
+  updateTemplateCount();
   renderStatus();
   renderPills();
+}
+
+function setTemplateChecks(checked) {
+  document.querySelectorAll("[data-template-check]").forEach((input) => {
+    if (input.value !== "controller") input.checked = checked;
+  });
+  renderControls();
+}
+
+function updateTemplateCount() {
+  const checks = [...document.querySelectorAll("[data-template-check]")];
+  const selected = checks.filter((input) => input.checked).length;
+  $("templateCount").textContent = checks.length ? `${selected} / ${checks.length}` : "0";
 }
 
 function renderPills() {

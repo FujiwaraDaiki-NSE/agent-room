@@ -386,6 +386,19 @@ body[data-room-state="open"] .controlPanel textarea {
   font-weight: 720;
 }
 
+.sectionActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sectionActions button {
+  height: 28px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .meetingStatusBody {
   min-height: 0;
   overflow: auto;
