@@ -1,5 +1,6 @@
 const state = {
   templates: [],
+  shareContexts: [],
   tmux: null,
   room: null,
   messages: [],
@@ -48,6 +49,7 @@ async function boot() {
   $("goal").addEventListener("input", renderControls);
   $("controllerTermination").addEventListener("input", renderControls);
   $("agentTermination").addEventListener("input", renderControls);
+  $("shareContextList").addEventListener("change", renderControls);
   $("messageText").addEventListener("keydown", (event) => handleComposerKey(event, sendMessage));
   $("controllerText").addEventListener("keydown", (event) => handleComposerKey(event, sendControllerMessage));
   $("messageText").addEventListener("input", growComposer);
@@ -72,10 +74,16 @@ async function runAction(label, task) {
 }
 
 async function refresh() {
-  const [templates, tmux] = await Promise.all([api("/api/templates"), api("/api/tmux")]);
+  const [templates, shareContexts, tmux] = await Promise.all([
+    api("/api/templates"),
+    api("/api/share/contexts"),
+    api("/api/tmux"),
+  ]);
   state.templates = templates;
+  state.shareContexts = shareContexts;
   state.tmux = tmux;
   renderTemplates();
+  renderShareContexts();
   renderDeploy();
   renderTmux();
   const rooms = await api("/api/rooms");
@@ -116,6 +124,7 @@ async function startRoom() {
     goal: $("goal").value.trim(),
     controller_termination: $("controllerTermination").value.trim(),
     agent_termination: $("agentTermination").value.trim(),
+    share_contexts: selectedShareContexts(),
     templates: selected,
   };
   state.room = await api("/api/rooms", { method: "POST", body: JSON.stringify(payload) });
@@ -300,6 +309,24 @@ function renderTemplates() {
     .join("");
 }
 
+function renderShareContexts() {
+  const selected = new Set(state.room && state.room.share_contexts ? state.room.share_contexts : []);
+  if (!state.shareContexts.length) {
+    $("shareContextList").innerHTML = `<div class="emptyState">No contexts</div>`;
+    return;
+  }
+  $("shareContextList").innerHTML = state.shareContexts
+    .map(
+      (context) => `
+        <label class="contextOption">
+          <input data-share-context-check type="checkbox" value="${escapeHtml(context.name)}" ${selected.has(context.name) ? "checked" : ""} />
+          <span>${escapeHtml(context.name)}</span>
+        </label>
+      `,
+    )
+    .join("");
+}
+
 function renderDeploy() {
   const options = state.templates.filter((template) => template.launch && template.scope !== "controller");
   $("deployTemplate").innerHTML = options
@@ -314,6 +341,7 @@ function renderRoom() {
   $("tableState").textContent = room ? stateLabel(room.state) : "Idle";
   $("setupState").textContent = room ? stateLabel(room.state) : "Draft";
   renderBrief(room);
+  renderShareContexts();
   renderAgents(room ? room.agents : []);
   renderRoster(room ? room.agents : []);
   renderMessageList("messages", state.messages, "No messages", false);
@@ -326,6 +354,8 @@ function renderBrief(room) {
   $("briefControllerTermination").textContent =
     room && room.controller_termination ? room.controller_termination : "Draft";
   $("briefAgentTermination").textContent = room && room.agent_termination ? room.agent_termination : "Draft";
+  $("briefShareContexts").textContent =
+    room && room.share_contexts && room.share_contexts.length ? room.share_contexts.join(", ") : "None";
 }
 
 function renderControls() {
@@ -348,6 +378,9 @@ function renderControls() {
   $("controllerTermination").disabled = !isDraft || pending;
   $("agentTermination").disabled = !isDraft || pending;
   $("deployTemplate").disabled = !isOpen || pending;
+  document.querySelectorAll("[data-share-context-check]").forEach((input) => {
+    input.disabled = !isDraft || pending;
+  });
   document.querySelectorAll("[data-template-check]").forEach((input) => {
     const isController = input.value === "controller";
     input.disabled = isController || !isDraft || pending;
@@ -554,6 +587,10 @@ function setStatus(text, error) {
 function hasActiveAgents() {
   if (!state.room) return false;
   return state.room.agents.some((agent) => ["starting", "active", "speaking", "idle"].includes(agent.state));
+}
+
+function selectedShareContexts() {
+  return [...document.querySelectorAll("[data-share-context-check]:checked")].map((input) => input.value);
 }
 
 function agentMap() {

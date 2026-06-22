@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Agent Room</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260619-control-room" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260622-share-context" />
   </head>
   <body>
     <main class="shell">
@@ -39,6 +39,10 @@
             <span>Agent Termination</span>
             <strong id="briefAgentTermination">Draft</strong>
           </div>
+          <div class="briefItem">
+            <span>Context</span>
+            <strong id="briefShareContexts">None</strong>
+          </div>
         </section>
         <div id="statusLine" class="statusLine" aria-live="polite"></div>
       </header>
@@ -63,6 +67,13 @@
               Agent Termination
                 <textarea id="agentTermination" rows="3"></textarea>
               </label>
+              <div>
+                <div class="sectionHead">
+                  <h2>Context</h2>
+                  <span>share</span>
+                </div>
+                <div id="shareContextList" class="contextList"></div>
+              </div>
               <div>
                 <div class="sectionHead">
                   <h2>Templates</h2>
@@ -140,6 +151,6 @@
         </aside>
       </section>
     </main>
-    <script src="/static/app.js?v=20260619-control-room"></script>
+    <script src="/static/app.js?v=20260622-share-context"></script>
   </body>
 </html>

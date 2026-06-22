@@ -53,6 +53,7 @@ def test_api_room_without_agents(tmp_path) -> None:
             "goal": "Discuss architecture",
             "controller_termination": "Controller closes the room",
             "agent_termination": "Each agent is done",
+            "share_contexts": [],
             "templates": [],
         },
     )
@@ -62,10 +63,75 @@ def test_api_room_without_agents(tmp_path) -> None:
     assert room["goal"] == "Discuss architecture"
     assert room["controller_termination"] == "Controller closes the room"
     assert room["agent_termination"] == "Each agent is done"
+    assert room["share_contexts"] == []
     assert room["agents"] == []
 
     messages = client.get(f"/api/rooms/{room['id']}/messages").json()
     assert messages[0]["kind"] == "goal"
+
+
+def test_share_contexts_list_direct_share_directories(tmp_path) -> None:
+    project_root = tmp_path / "project"
+    share_root = project_root / "share"
+    (share_root / "alpha").mkdir(parents=True)
+    (share_root / "beta").mkdir()
+    (share_root / ".hidden").mkdir()
+    (share_root / "alpha" / "nested").mkdir()
+    (share_root / "notes.txt").write_text("note", encoding="utf-8")
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(project_root, tmp_path / "data", auth_file))
+
+    response = client.get("/api/share/contexts")
+
+    assert response.status_code == 200
+    assert [context["name"] for context in response.json()] == ["alpha", "beta"]
+
+
+def test_room_stores_selected_share_contexts(tmp_path) -> None:
+    project_root = tmp_path / "project"
+    (project_root / "share" / "alpha").mkdir(parents=True)
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(project_root, tmp_path / "data", auth_file))
+
+    response = client.post(
+        "/api/rooms",
+        json={
+            "name": "Design",
+            "goal": "Discuss architecture",
+            "controller_termination": "Controller closes the room",
+            "agent_termination": "Each agent is done",
+            "share_contexts": ["alpha"],
+            "templates": [],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["share_contexts"] == ["alpha"]
+
+
+def test_room_rejects_unknown_share_context(tmp_path) -> None:
+    project_root = tmp_path / "project"
+    (project_root / "share" / "alpha").mkdir(parents=True)
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(project_root, tmp_path / "data", auth_file))
+
+    response = client.post(
+        "/api/rooms",
+        json={
+            "name": "Design",
+            "goal": "Discuss architecture",
+            "controller_termination": "Controller closes the room",
+            "agent_termination": "Each agent is done",
+            "share_contexts": ["missing"],
+            "templates": [],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "share context not found: missing" in response.json()["detail"]
 
 
 def test_controller_private_messages_are_separate(tmp_path, monkeypatch) -> None:
@@ -146,6 +212,7 @@ def test_room_done_stops_agent_panes_but_keeps_controller_pane(tmp_path, monkeyp
             "goal": "Discuss architecture",
             "controller_termination": "Controller closes the room",
             "agent_termination": "Each agent is done",
+            "share_contexts": [],
             "templates": [],
         },
     ).json()
@@ -193,6 +260,7 @@ def test_room_stop_closes_all_panes_even_when_agents_are_done(tmp_path, monkeypa
             "goal": "Discuss architecture",
             "controller_termination": "Controller closes the room",
             "agent_termination": "Each agent is done",
+            "share_contexts": [],
             "templates": [],
         },
     ).json()
@@ -230,6 +298,7 @@ def test_deploy_requires_tmux(tmp_path, monkeypatch) -> None:
             "goal": "Discuss architecture",
             "controller_termination": "Controller closes the room",
             "agent_termination": "Each agent is done",
+            "share_contexts": [],
             "templates": [],
         },
     ).json()

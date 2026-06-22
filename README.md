@@ -28,6 +28,9 @@ controller/
   agent.json
   avatar.svg
 
+share/
+  README.md
+
 agent-templates/
   critic/
   researcher/
@@ -100,12 +103,28 @@ This keeps personality and agent config isolated without forcing each pane to lo
 1. Enter `Goal`.
 2. Enter `Controller Termination`.
 3. Enter `Agent Termination`.
-4. Select templates.
-5. Press `Start`.
-6. The app creates one tmux pane per selected agent. `Controller` is always included.
-7. Each Codex TUI starts with `/goal`.
-8. Agents read and post through the Agent Room MCP tools.
-9. The controller marks the room done or stops agent panes.
+4. Select shared context directories from `share/`.
+5. Select templates.
+6. Press `Start`.
+7. The app creates one tmux pane per selected agent. `Controller` is always included.
+8. Each Codex TUI starts with `/goal`.
+9. Agents read selected shared context through `./share/<context-name>`.
+10. Agents read and post through the Agent Room MCP tools.
+11. The controller marks the room done or stops agent panes.
+
+## Shared Context
+
+Create one directory per shared context under the repository-level `share/` directory:
+
+```text
+share/
+  product-spec/
+  reference-repo/
+```
+
+The setup UI lists direct directories under `share/`.
+Selected directories are exposed to deployed agents as `./share/<context-name>`.
+The app links these directories into each agent runtime; it does not copy their contents.
 
 ## Room Controls
 

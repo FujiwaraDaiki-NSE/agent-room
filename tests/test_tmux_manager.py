@@ -19,6 +19,23 @@ def test_link_shared_auth(tmp_path) -> None:
     assert linked.resolve() == auth_file
 
 
+def test_link_share_contexts_links_selected_directories(tmp_path) -> None:
+    project_root = tmp_path / "project"
+    source = project_root / "share" / "alpha"
+    source.mkdir(parents=True)
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    runtime_dir = tmp_path / "runtime" / "agent"
+    runtime_dir.mkdir(parents=True)
+    manager = TmuxManager(project_root, tmp_path, auth_file)
+
+    manager._link_share_contexts(runtime_dir, ["alpha"])
+
+    link = runtime_dir / "share" / "alpha"
+    assert link.is_symlink()
+    assert link.resolve() == source
+
+
 def test_trust_project_adds_runtime_trust_once(tmp_path) -> None:
     auth_file = tmp_path / "auth.json"
     auth_file.write_text("{}", encoding="utf-8")
@@ -51,6 +68,7 @@ def test_configure_mcp_adds_controller_tools(tmp_path, monkeypatch) -> None:
         goal="Discuss",
         controller_termination="Controller done",
         agent_termination="Agents done",
+        share_contexts=[],
         state="open",
         created_at="2026-06-19T00:00:00+00:00",
         agents=[],
@@ -97,6 +115,7 @@ def test_configure_mcp_limits_regular_agent_tools(tmp_path, monkeypatch) -> None
         goal="Discuss",
         controller_termination="Controller done",
         agent_termination="Agents done",
+        share_contexts=[],
         state="open",
         created_at="2026-06-19T00:00:00+00:00",
         agents=[],
@@ -165,6 +184,7 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
         goal="Discuss",
         controller_termination="Controller done",
         agent_termination="Agents done",
+        share_contexts=["alpha"],
         state="open",
         created_at="2026-06-19T00:00:00+00:00",
         agents=[],
@@ -219,8 +239,10 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
 
     assert "Controller Termination:\nController done" in controller_prompt
     assert "Agent Termination:\nAgents done" in controller_prompt
+    assert "./share/alpha" in controller_prompt
     assert "Controller Termination:" not in agent_prompt
     assert "Agent Termination:\nAgents done" in agent_prompt
+    assert "./share/alpha" in agent_prompt
     assert "Agent Room MCP tools" in controller_prompt
     assert "uv run agent-room room" not in controller_prompt
     assert "uv run agent-room room" not in agent_prompt

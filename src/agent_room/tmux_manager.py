@@ -22,6 +22,7 @@ class TmuxManager:
         self.data_dir = data_dir
         self.codex_auth_file = codex_auth_file
         self.runtime_root = project_root / "runtime"
+        self.share_root = project_root / "share"
 
     def status(self) -> dict[str, str | bool]:
         pane = os.environ.get("TMUX_PANE")
@@ -53,6 +54,7 @@ class TmuxManager:
         if runtime_dir.exists():
             raise TmuxError(f"runtime directory already exists: {runtime_dir}")
         shutil.copytree(template_dir, runtime_dir)
+        self._link_share_contexts(runtime_dir, room.share_contexts)
         self._trust_project(runtime_dir)
         self._configure_mcp(runtime_dir, room, template, instance_id)
         self._link_shared_auth(runtime_dir)
@@ -147,6 +149,7 @@ class TmuxManager:
             f"Role: {template.name}",
             "",
             *goal_lines[1:],
+            *self._share_context_lines(room.share_contexts),
             "MCP tools:",
             "- room_read: read public room messages",
             "- room_post: post a public room message",
@@ -171,6 +174,18 @@ class TmuxManager:
                 ]
             )
         return "\n".join(lines)
+
+    def _share_context_lines(self, share_contexts: list[str]) -> list[str]:
+        lines = [
+            "Shared Context:",
+            "Read selected shared context directories under ./share.",
+        ]
+        if share_contexts:
+            lines.extend(f"- ./share/{name}" for name in share_contexts)
+        else:
+            lines.append("- No shared context selected.")
+        lines.extend(["", "Treat shared context as read-only.", ""])
+        return lines
 
     def _goal_lines(
         self,
@@ -248,6 +263,22 @@ class TmuxManager:
         if target.exists() or target.is_symlink():
             raise TmuxError(f"runtime auth file already exists: {target}")
         target.symlink_to(self.codex_auth_file)
+
+    def _link_share_contexts(self, runtime_dir: Path, share_contexts: list[str]) -> None:
+        if not self.share_root.is_dir():
+            raise TmuxError(f"share directory not found: {self.share_root}")
+        runtime_share = runtime_dir / "share"
+        if runtime_share.exists() or runtime_share.is_symlink():
+            raise TmuxError(f"runtime share path already exists: {runtime_share}")
+        runtime_share.mkdir()
+        for name in share_contexts:
+            if not name or name in {".", ".."} or Path(name).name != name:
+                raise TmuxError(f"share context must be a directory name: {name}")
+            source = self.share_root / name
+            if source.is_symlink() or not source.is_dir():
+                raise TmuxError(f"share context not found: {name}")
+            target = runtime_share / name
+            target.symlink_to(source, target_is_directory=True)
 
     def _trust_project(self, runtime_dir: Path) -> None:
         config_path = runtime_dir / ".codex" / "config.toml"

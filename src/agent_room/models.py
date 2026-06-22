@@ -71,6 +71,7 @@ class Room(BaseModel):
     goal: str
     controller_termination: str
     agent_termination: str
+    share_contexts: list[str]
     state: Literal["draft", "open", "done", "stopped"]
     created_at: str
     agents: list[AgentInstance]
@@ -81,6 +82,7 @@ class CreateRoomRequest(BaseModel):
     goal: str
     controller_termination: str
     agent_termination: str
+    share_contexts: list[str]
     templates: list[str]
 
 

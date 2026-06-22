@@ -7,7 +7,7 @@ def test_room_message_and_done_flow(tmp_path) -> None:
     store = Store(tmp_path)
     assert len(store.list_rooms()) == 1
 
-    room = store.create_room("Spec", "Discuss the design", "Controller done", "Agents done")
+    room = store.create_room("Spec", "Discuss the design", "Controller done", "Agents done", [])
 
     message = store.add_message(room.id, "user", "user", "User", "Start", "goal")
     assert message.id == 1
@@ -23,7 +23,7 @@ def test_room_message_and_done_flow(tmp_path) -> None:
 def test_reset_keeps_single_room(tmp_path) -> None:
     store = Store(tmp_path)
     first = store.current_room()
-    store.create_room("Spec", "Discuss", "Controller done", "Agents done")
+    store.create_room("Spec", "Discuss", "Controller done", "Agents done", [])
 
     second = store.reset_room()
 
@@ -34,7 +34,7 @@ def test_reset_keeps_single_room(tmp_path) -> None:
 
 def test_controller_messages_are_separate_from_room_messages(tmp_path) -> None:
     store = Store(tmp_path)
-    room = store.create_room("Spec", "Discuss", "Controller done", "Agents done")
+    room = store.create_room("Spec", "Discuss", "Controller done", "Agents done", [])
 
     store.add_message(room.id, "user", "user", "User", "Public", "message")
     private = store.add_controller_message(room.id, "user", "user", "User", "Private")
@@ -68,3 +68,4 @@ def test_old_termination_state_is_migrated(tmp_path) -> None:
 
     assert room.controller_termination == "Done"
     assert room.agent_termination == "Done"
+    assert room.share_contexts == []

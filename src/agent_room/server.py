@@ -45,6 +45,7 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
     registry = TemplateRegistry(project_root)
     store = Store(data_dir)
     tmux = TmuxManager(project_root, data_dir, codex_auth_file)
+    share_root = project_root / "share"
     hub = Hub()
     app = FastAPI(title="Agent Room")
 
@@ -76,6 +77,13 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
         except TemplateError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @app.get("/api/share/contexts")
+    def list_share_contexts() -> list[dict[str, str]]:
+        try:
+            return _share_contexts()
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     @app.get("/api/rooms")
     def list_rooms() -> list[dict[str, Any]]:
         return [room.model_dump() for room in store.list_rooms()]
@@ -85,11 +93,13 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
         try:
             current = store.current_room()
             _stop_room_panes(current.id, "user", "room restart", False, False)
+            share_contexts = _validate_share_contexts(request.share_contexts)
             room = store.create_room(
                 request.name,
                 request.goal,
                 request.controller_termination,
                 request.agent_termination,
+                share_contexts,
             )
             store.add_message(room.id, "user", "user", "User", request.goal, "goal")
             for template_id in request.templates:
@@ -366,5 +376,27 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
                 actor_id,
                 "agent.stopped",
             )
+
+    def _share_contexts() -> list[dict[str, str]]:
+        if not share_root.is_dir():
+            raise ValueError(f"share directory not found: {share_root}")
+        contexts = []
+        for path in sorted(share_root.iterdir(), key=lambda item: item.name):
+            if path.name.startswith("."):
+                continue
+            if path.is_symlink():
+                continue
+            if path.is_dir():
+                contexts.append({"name": path.name, "path": str(path)})
+        return contexts
+
+    def _validate_share_contexts(names: list[str]) -> list[str]:
+        if len(names) != len(set(names)):
+            raise ValueError("share contexts must be unique")
+        available = {context["name"] for context in _share_contexts()}
+        for name in names:
+            if name not in available:
+                raise ValueError(f"share context not found: {name}")
+        return names
 
     return app

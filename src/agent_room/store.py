@@ -76,6 +76,7 @@ class Store:
         goal: str,
         controller_termination: str,
         agent_termination: str,
+        share_contexts: list[str],
     ) -> Room:
         self._require("name", name)
         self._require("goal", goal)
@@ -89,6 +90,7 @@ class Store:
             room.goal = goal
             room.controller_termination = controller_termination
             room.agent_termination = agent_termination
+            room.share_contexts = share_contexts
             room.state = "open"
             room.agents = []
             data["rooms"] = {room.id: room.model_dump()}
@@ -96,7 +98,15 @@ class Store:
             data["controller_messages"] = {room.id: []}
             data["events"] = {room.id: []}
             data["current_room_id"] = room.id
-            self._append_event(data, room.id, "room.started", "system", None, None, {"name": name})
+            self._append_event(
+                data,
+                room.id,
+                "room.started",
+                "system",
+                None,
+                None,
+                {"name": name, "share_contexts": share_contexts},
+            )
             self._write(data)
         return room
 
@@ -292,6 +302,8 @@ class Store:
                 room["controller_termination"] = room.get("termination", "")
             if "agent_termination" not in room:
                 room["agent_termination"] = room.get("termination", "")
+            if "share_contexts" not in room:
+                room["share_contexts"] = []
             if room_id not in data["messages"]:
                 data["messages"][room_id] = []
             if room_id not in data["controller_messages"]:
@@ -321,6 +333,7 @@ class Store:
             goal=goal,
             controller_termination=controller_termination,
             agent_termination=agent_termination,
+            share_contexts=[],
             state=state,  # type: ignore[arg-type]
             created_at=now_iso(),
             agents=[],
