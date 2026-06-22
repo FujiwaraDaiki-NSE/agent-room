@@ -25,6 +25,7 @@ def test_templates_have_required_files() -> None:
         "malcontent-user",
         "malcontent-ops",
         "malcontent-roaster",
+        "hiroyuki",
     } <= ids
 
     for template in templates:
