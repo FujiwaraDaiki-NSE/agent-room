@@ -39,11 +39,23 @@ def test_templates_have_required_files() -> None:
 
 def test_templates_define_visible_personality() -> None:
     registry = TemplateRegistry(Path.cwd())
+    required_sections = [
+        "## Personality",
+        "## Role",
+        "## Voice",
+        "## Judgment Criteria",
+        "## Prohibited Behavior",
+        "## Output Examples",
+        "## Self-check Before Posting",
+    ]
 
     for template in registry.list():
         agents_md = registry.path_for(template.id) / "AGENTS.md"
         text = agents_md.read_text(encoding="utf-8")
-        assert "## Personality" in text
+        for section in required_sections:
+            assert section in text
+        assert "Reference persona:" in text
+        assert "Do not claim" in text
 
 
 def test_regular_agent_templates_use_mini_model() -> None:
