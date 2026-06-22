@@ -89,6 +89,8 @@ def test_api_lists_agent_teams(tmp_path) -> None:
 
     assert response.status_code == 200
     teams = response.json()
+    assert teams[0]["id"] == "default"
+    assert teams[0]["templates"] == ["critic", "researcher", "builder", "synthesizer", "facilitator", "operator"]
     critique_lab = next(team for team in teams if team["id"] == "critique-lab")
     assert critique_lab["templates"] == [
         "critique-technical",

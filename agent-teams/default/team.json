@@ -1,0 +1,13 @@
+{
+  "id": "default",
+  "name": "Default",
+  "summary": "最初の構成",
+  "templates": [
+    "critic",
+    "researcher",
+    "builder",
+    "synthesizer",
+    "facilitator",
+    "operator"
+  ]
+}

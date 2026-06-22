@@ -53,8 +53,8 @@ async function boot() {
   $("controllerTermination").addEventListener("input", renderControls);
   $("agentTermination").addEventListener("input", renderControls);
   $("shareContextList").addEventListener("change", renderControls);
-  $("teamList").addEventListener("change", renderControls);
-  $("templateList").addEventListener("change", renderControls);
+  $("teamList").addEventListener("change", handleTeamChange);
+  $("templateList").addEventListener("change", handleTemplateChange);
   $("messageText").addEventListener("keydown", (event) => handleComposerKey(event, sendMessage));
   $("controllerText").addEventListener("keydown", (event) => handleComposerKey(event, sendControllerMessage));
   $("messageText").addEventListener("input", growComposer);
@@ -89,8 +89,8 @@ async function refresh() {
   state.teams = teams;
   state.shareContexts = shareContexts;
   state.tmux = tmux;
-  renderTeams();
   renderTemplates();
+  renderTeams();
   renderShareContexts();
   renderDeploy();
   renderTmux();
@@ -134,7 +134,7 @@ async function startRoom() {
     agent_termination: $("agentTermination").value.trim(),
     share_contexts: selectedShareContexts(),
     templates: selected,
-    teams: selectedTeams(),
+    teams: [],
   };
   state.room = await api("/api/rooms", { method: "POST", body: JSON.stringify(payload) });
   connectRoom();
@@ -315,7 +315,7 @@ function renderTemplates() {
       `,
     )
     .join("");
-  updateTemplateCount();
+  syncTeamChecksFromTemplates();
 }
 
 function renderTeams() {
@@ -339,6 +339,7 @@ function renderTeams() {
       `;
     })
     .join("");
+  syncTeamChecksFromTemplates();
 }
 
 function renderShareContexts() {
@@ -482,7 +483,47 @@ function setTemplateChecks(checked) {
   document.querySelectorAll("[data-template-check]").forEach((input) => {
     if (input.value !== "controller") input.checked = checked;
   });
+  syncTeamChecksFromTemplates();
   renderControls();
+}
+
+function handleTeamChange(event) {
+  const input = event.target;
+  if (!input.matches("[data-team-check]")) return;
+  const team = state.teams.find((item) => item.id === input.value);
+  if (!team) return;
+  const templateInputs = new Map(
+    [...document.querySelectorAll("[data-template-check]")].map((item) => [item.value, item]),
+  );
+  const selectedByTeams = selectedTeamTemplateIds();
+  team.templates.forEach((templateId) => {
+    const templateInput = templateInputs.get(templateId);
+    if (templateInput && !templateInput.disabled) {
+      templateInput.checked = input.checked || selectedByTeams.has(templateId);
+    }
+  });
+  syncTeamChecksFromTemplates();
+  renderControls();
+}
+
+function handleTemplateChange(event) {
+  if (!event.target.matches("[data-template-check]")) return;
+  syncTeamChecksFromTemplates();
+  renderControls();
+}
+
+function syncTeamChecksFromTemplates() {
+  const templateInputs = new Map(
+    [...document.querySelectorAll("[data-template-check]")].map((input) => [input.value, input]),
+  );
+  document.querySelectorAll("[data-team-check]").forEach((input) => {
+    const team = state.teams.find((item) => item.id === input.value);
+    const memberInputs = team.templates.map((templateId) => templateInputs.get(templateId));
+    const checkedCount = memberInputs.filter((memberInput) => memberInput.checked).length;
+    input.checked = checkedCount === memberInputs.length;
+    input.indeterminate = checkedCount > 0 && checkedCount < memberInputs.length;
+  });
+  updateTemplateCount();
 }
 
 function updateTemplateCount() {
@@ -701,8 +742,11 @@ function selectedShareContexts() {
   return [...document.querySelectorAll("[data-share-context-check]:checked")].map((input) => input.value);
 }
 
-function selectedTeams() {
-  return [...document.querySelectorAll("[data-team-check]:checked")].map((input) => input.value);
+function selectedTeamTemplateIds() {
+  const selectedTeamIds = new Set([...document.querySelectorAll("[data-team-check]:checked")].map((input) => input.value));
+  return new Set(
+    state.teams.filter((team) => selectedTeamIds.has(team.id)).flatMap((team) => team.templates),
+  );
 }
 
 function agentMap() {

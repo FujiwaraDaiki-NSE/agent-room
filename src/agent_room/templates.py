@@ -77,7 +77,7 @@ class TeamRegistry:
         for path in sorted(self.teams_dir.iterdir()):
             if path.is_dir():
                 teams.append(self._load(path))
-        return teams
+        return sorted(teams, key=lambda team: (team.id != "default", team.name))
 
     def get(self, team_id: str) -> AgentTeam:
         for team in self.list():

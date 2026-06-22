@@ -77,6 +77,8 @@ def test_teams_reference_regular_agent_templates() -> None:
     teams = team_registry.list()
 
     ids = {team.id for team in teams}
+    assert teams[0].id == "default"
+    assert "default" in ids
     assert "critique-lab" in ids
     for team in teams:
         assert team.templates
