@@ -137,7 +137,7 @@ Room start waits for these runtime copies and agent deployment to finish before 
 - `New`: Stop current agent panes and replace the current room with a fresh draft room.
 - `Start`: Start the current room from the form and deploy the checked templates.
 
-`Teams` check or clear matching template checkboxes. `Default` contains the original starter set. `Critique Lab` contains perspective-specific critics and an idea revision agent.
+`Teams` check or clear matching template checkboxes. `Default` contains the original starter set. `Critique Lab` contains perspective-specific critics and an idea revision agent. `Malcontent Table` contains complaint-heavy agents, including one sharp insult critic.
 - `Close`: Stop the current room and close only its agent panes.
 - `Refresh`: Reload templates, the current room, messages, and tmux status.
 

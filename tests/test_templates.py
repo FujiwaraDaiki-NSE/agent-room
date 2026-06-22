@@ -22,6 +22,9 @@ def test_templates_have_required_files() -> None:
         "critique-business",
         "critique-risk",
         "idea-reviser",
+        "malcontent-user",
+        "malcontent-ops",
+        "malcontent-roaster",
     } <= ids
 
     for template in templates:
@@ -80,6 +83,7 @@ def test_teams_reference_regular_agent_templates() -> None:
     assert teams[0].id == "default"
     assert "default" in ids
     assert "critique-lab" in ids
+    assert "malcontent-table" in ids
     for team in teams:
         assert team.templates
         for template_id in team.templates:
