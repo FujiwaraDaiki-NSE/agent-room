@@ -857,7 +857,7 @@ function messageArticle(message, agents, isPrivate) {
           <span><time datetime="${escapeHtml(message.created_at)}">${escapeHtml(formatTime(message.created_at))}</time> · #${message.id}</span>
         </div>
         <div class="messageTag">${escapeHtml(messageTagLabel(tag))}</div>
-        <div class="messageText">${escapeHtml(localizeText(message.text))}</div>
+        <div class="messageText">${renderMessageText(message.text)}</div>
       </div>
     </article>
   `;
@@ -1085,6 +1085,125 @@ function localizeText(value) {
       text = text.replaceAll(source, label);
     });
   return text;
+}
+
+function renderMessageText(value) {
+  return renderMarkdown(localizeText(value));
+}
+
+function renderMarkdown(value) {
+  const lines = String(value).replaceAll("\r\n", "\n").replaceAll("\r", "\n").split("\n");
+  const blocks = [];
+  const paragraph = [];
+  let index = 0;
+  let fence = null;
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    blocks.push(`<p>${renderInlineMarkdown(paragraph.join("\n")).replaceAll("\n", "<br />")}</p>`);
+    paragraph.length = 0;
+  };
+
+  while (index < lines.length) {
+    const line = lines[index];
+
+    if (fence) {
+      if (/^```\s*$/.test(line)) {
+        blocks.push(codeBlock(fence.lines.join("\n"), fence.language));
+        fence = null;
+      } else {
+        fence.lines.push(line);
+      }
+      index += 1;
+      continue;
+    }
+
+    const fenceMatch = line.match(/^```([A-Za-z0-9_-]*)\s*$/);
+    if (fenceMatch) {
+      flushParagraph();
+      fence = { language: fenceMatch[1], lines: [] };
+      index += 1;
+      continue;
+    }
+
+    if (!line.trim()) {
+      flushParagraph();
+      index += 1;
+      continue;
+    }
+
+    const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
+    if (headingMatch) {
+      flushParagraph();
+      const level = headingMatch[1].length;
+      blocks.push(`<h${level}>${renderInlineMarkdown(headingMatch[2].trim())}</h${level}>`);
+      index += 1;
+      continue;
+    }
+
+    if (/^>\s?/.test(line)) {
+      flushParagraph();
+      const quoteLines = [];
+      while (index < lines.length && /^>\s?/.test(lines[index])) {
+        quoteLines.push(lines[index].replace(/^>\s?/, ""));
+        index += 1;
+      }
+      blocks.push(`<blockquote>${renderMarkdown(quoteLines.join("\n"))}</blockquote>`);
+      continue;
+    }
+
+    const unorderedMatch = line.match(/^\s*[-*]\s+(.+)$/);
+    const orderedMatch = line.match(/^\s*\d+\.\s+(.+)$/);
+    if (unorderedMatch || orderedMatch) {
+      flushParagraph();
+      const ordered = Boolean(orderedMatch);
+      const items = [];
+      while (index < lines.length) {
+        const match = ordered
+          ? lines[index].match(/^\s*\d+\.\s+(.+)$/)
+          : lines[index].match(/^\s*[-*]\s+(.+)$/);
+        if (!match) break;
+        items.push(`<li>${renderInlineMarkdown(match[1].trim())}</li>`);
+        index += 1;
+      }
+      blocks.push(`<${ordered ? "ol" : "ul"}>${items.join("")}</${ordered ? "ol" : "ul"}>`);
+      continue;
+    }
+
+    paragraph.push(line);
+    index += 1;
+  }
+
+  flushParagraph();
+  if (fence) blocks.push(codeBlock(fence.lines.join("\n"), fence.language));
+  return blocks.join("");
+}
+
+function codeBlock(code, language) {
+  const className = language ? ` class="language-${escapeHtml(language)}"` : "";
+  return `<pre><code${className}>${escapeHtml(code)}</code></pre>`;
+}
+
+function renderInlineMarkdown(value) {
+  const tokens = [];
+  const marker = "\u0000";
+  const stash = (html) => `${marker}${tokens.push(html) - 1}${marker}`;
+  let text = String(value);
+
+  text = text.replace(/`([^`\n]+)`/g, (_match, code) => stash(`<code>${escapeHtml(code)}</code>`));
+  text = text.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (_match, label, url) =>
+    stash(
+      `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`,
+    ),
+  );
+
+  text = escapeHtml(text)
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
+    .replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
+    .replace(/_([^_\n]+)_/g, "<em>$1</em>");
+
+  return text.replace(/\u0000(\d+)\u0000/g, (_match, tokenIndex) => tokens[Number(tokenIndex)]);
 }
 
 function agentStateClass(value) {
