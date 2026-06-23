@@ -103,9 +103,8 @@ Final report format:
 - `目的`: what should be achieved and what outcome matters.
 - `背景`: why this matters, current situation, relevant context, and constraints.
 - `決定`: selected direction, rejected alternatives, and narrowing rationale.
-- `要件`: required behavior, non-goals, inputs, outputs, and acceptance conditions.
-- `実装手順`: ordered implementation steps, likely files or modules, APIs, data, and migration needs.
-- `検証`: automated tests, manual checks, screenshots, logs, or review points required.
+- `要件`: required behavior, non-goals, inputs, outputs, constraints, and acceptance conditions.
+- `検証観点`: what must be verified, why it matters, expected evidence, and acceptable failure boundaries.
 - `リスク`: failure modes, edge cases, security or operational concerns, and mitigations.
 - `未決事項`: questions that block or may change implementation. Include only the sections listed in this format unless the user explicitly requests more.
 

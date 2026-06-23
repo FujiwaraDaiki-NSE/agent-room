@@ -134,7 +134,7 @@ Agent personalities stay active, but meeting roles are temporary. The controller
 
 Every phase ends with a consensus gate. The controller posts the current synthesis, explains what will change if the room advances, and asks agents for `accept`, `revise`, or `block` with reasons. A blocker must be resolved, split, or recorded as an unresolved implementation question before advancing.
 
-The final report should be detailed enough for another agent to start implementation. It includes purpose, background, decisions, requirements, implementation steps, verification, risks, and unresolved questions.
+The final report should be detailed enough for another agent to start implementation. It includes purpose, background, decisions, requirements, verification viewpoints, risks, and unresolved questions.
 
 When narrowing ideas, the controller must explain the criteria, supporting evidence, selected ideas, dropped or merged ideas, accepted tradeoff, and what would change the decision later.
 
