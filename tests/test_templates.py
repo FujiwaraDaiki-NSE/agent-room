@@ -37,16 +37,22 @@ def test_templates_have_required_files() -> None:
     assert len(personalities) == len(set(personalities))
 
 
-def test_templates_define_visible_personality() -> None:
+def test_templates_define_visible_speaking_tendency() -> None:
     registry = TemplateRegistry(Path.cwd())
     required_sections = [
-        "## Personality",
         "## Role",
-        "## Voice",
+        "## Speaking Tendency",
         "## Judgment Criteria",
-        "## Prohibited Behavior",
-        "## Output Examples",
+        "## Avoid",
         "## Self-check Before Posting",
+    ]
+    forbidden_text = [
+        "## Personality",
+        "## Voice",
+        "Reference persona:",
+        "Do not claim",
+        "named character",
+        "catchphrases",
     ]
 
     for template in registry.list():
@@ -54,8 +60,8 @@ def test_templates_define_visible_personality() -> None:
         text = agents_md.read_text(encoding="utf-8")
         for section in required_sections:
             assert section in text
-        assert "Reference persona:" in text
-        assert "Do not claim" in text
+        for forbidden in forbidden_text:
+            assert forbidden not in text
 
 
 def test_regular_agent_templates_use_mini_model() -> None:

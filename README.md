@@ -100,7 +100,7 @@ The app links each runtime agent's `.codex/auth.json` to the file you pass:
 --codex-auth-file "$HOME/.codex/auth.json"
 ```
 
-This keeps personality and agent config isolated without forcing each pane to log in again.
+This keeps speaking tendency and agent config isolated without forcing each pane to log in again.
 
 ## Room Flow
 
@@ -159,7 +159,7 @@ Room start waits for these runtime copies and agent deployment to finish before 
 - `New`: Stop current agent panes and replace the current room with a fresh draft room.
 - `Start`: Start the current room from the form and deploy the checked templates.
 
-`Teams` check or clear matching template checkboxes. `Default` contains the original starter set. `Critique Lab` contains perspective-specific critics and an idea revision agent. `Malcontent Table` contains complaint-heavy agents, including one sharp insult critic and a relaxed skeptical debater.
+`Teams` check or clear matching template checkboxes. `Default` contains the original starter set. `Critique Lab` contains perspective-specific critics and an idea revision agent. `Malcontent Table` contains complaint-heavy agents, including one sharp critic and a skeptical debater.
 - `Close`: Stop the current room manually and close its agent panes.
 - `Refresh`: Reload templates, the current room, messages, and tmux status.
 
@@ -235,13 +235,13 @@ Each template has a manifest:
 ```json
 {
   "id": "critic",
-  "name": "Critic",
-  "shortName": "Critic",
-  "role": "review",
-  "personality": "Skeptical, precise, and evidence-driven. Finds weak assumptions.",
+  "name": "反証役",
+  "shortName": "反証",
+  "role": "レビュー",
+  "personality": "発言傾向: 弱い前提、隠れた矛盾、都合のよい解釈を疑う。",
   "accent": "#D94841",
   "avatar": "avatar.svg",
-  "summary": "Challenges proposals, checks risks, and looks for missing tests or edge cases.",
+  "summary": "弱い前提、隠れた矛盾、都合のよい解釈を疑う。",
   "launch": true,
   "permissions": ["read_room", "post_message", "mark_done"]
 }
