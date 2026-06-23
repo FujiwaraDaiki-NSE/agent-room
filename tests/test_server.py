@@ -461,6 +461,43 @@ def test_controller_private_message_resumes_stopped_controller(tmp_path, monkeyp
     ]
 
 
+def test_controller_private_message_resumes_timestamped_codex_session(tmp_path, monkeypatch) -> None:
+    session_id = "019ef3e4-eb46-7841-ba70-659fbfb3bbce"
+    runtime_dir = tmp_path / "runtime" / "controller"
+    sessions_dir = runtime_dir / ".codex" / "sessions" / "2026" / "06" / "23"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / f"rollout-2026-06-23T18-52-06-{session_id}.jsonl").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("TMUX_PANE", "%0")
+    monkeypatch.setattr(TmuxManager, "_split_pane", lambda _manager, _command: "%9")
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+    room = client.get("/api/rooms").json()[0]
+    write_room_agents(
+        tmp_path,
+        room["id"],
+        [agent_instance("controller-1", "controller", "stopped", None, str(runtime_dir))],
+    )
+
+    response = client.post(
+        f"/api/rooms/{room['id']}/controller/messages",
+        json={
+            "actor_type": "user",
+            "actor_id": "user",
+            "actor_name": "User",
+            "text": "Follow up",
+            "kind": "message",
+        },
+    )
+
+    assert response.status_code == 200
+    updated = client.get(f"/api/rooms/{room['id']}").json()
+    controller = updated["agents"][0]
+    assert controller["state"] == "active"
+    assert controller["pane_id"] == "%9"
+    assert controller["codex_session_id"] == session_id
+
+
 def test_closed_discussion_blocks_regular_agent_posts_but_allows_controller_and_user(tmp_path) -> None:
     auth_file = tmp_path / "auth.json"
     auth_file.write_text("{}", encoding="utf-8")

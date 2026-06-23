@@ -18,7 +18,8 @@ class TmuxError(RuntimeError):
 
 
 SESSION_ID_PATTERN = re.compile(
-    r"rollout-\d{4}-\d{2}-\d{2}-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl?$"
+    r"rollout-\d{4}-\d{2}-\d{2}(?:T\d{2}-\d{2}-\d{2})?-"
+    r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl?$"
 )
 
 SHARE_COPY_IGNORE_PATTERNS = (
