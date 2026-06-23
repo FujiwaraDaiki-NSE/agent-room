@@ -109,19 +109,22 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             current = store.current_room()
             _stop_room_panes(current.id, "user", "room restart", False, False)
             share_contexts = _validate_share_contexts(request.share_contexts)
+            selected_template_ids = _selected_template_ids(request.templates, request.teams)
+            planned_template_ids = _planned_template_ids(selected_template_ids)
             room = store.create_room(
                 request.name,
                 request.goal,
                 request.controller_termination,
                 request.agent_termination,
                 share_contexts,
+                planned_template_ids,
                 "starting",
             )
             store.add_message(room.id, "user", "user", "User", request.goal, "goal")
             try:
-                for template_id in _selected_template_ids(request.templates, request.teams):
+                for template_id in _initial_template_ids(selected_template_ids):
                     await _deploy(room.id, template_id, 1, "user")
-                room = store.set_room_state(room.id, "open", "system", "agents deployed")
+                room = store.set_room_state(room.id, "open", "system", "controller deployed")
             except (ValueError, TemplateError, TmuxError, KeyError) as exc:
                 store.set_room_state(room.id, "stopped", "system", str(exc))
                 raise
@@ -431,6 +434,12 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
         for team_id in team_ids:
             selected.extend(team_registry.get(team_id).templates)
         return list(dict.fromkeys(selected))
+
+    def _initial_template_ids(template_ids: list[str]) -> list[str]:
+        return [template_id for template_id in template_ids if registry.get(template_id).scope == "controller"]
+
+    def _planned_template_ids(template_ids: list[str]) -> list[str]:
+        return [template_id for template_id in template_ids if registry.get(template_id).scope == "agent"]
 
     def _notify_controller_whisper(room_id: str, text: str) -> ControllerNotifyResult:
         room = store.get_room(room_id)

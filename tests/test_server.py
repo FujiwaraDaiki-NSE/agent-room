@@ -68,6 +68,7 @@ def test_api_room_without_agents(tmp_path) -> None:
     assert room["controller_termination"] == "Controller closes the room"
     assert room["agent_termination"] == "Each agent is done"
     assert room["share_contexts"] == []
+    assert room["planned_template_ids"] == []
     assert room["agent_posting_closed"] is True
     assert room["muted_agent_ids"] == []
     assert room["state"] == "open"
@@ -150,7 +151,7 @@ def test_room_opens_after_agent_deploy_finishes(tmp_path, monkeypatch) -> None:
     assert event_types == ["room.starting", "message.created", "agent.deployed", "room.started"]
 
 
-def test_room_start_expands_selected_team_templates(tmp_path, monkeypatch) -> None:
+def test_room_start_stores_planned_team_templates_but_deploys_controller_only(tmp_path, monkeypatch) -> None:
     deployed = []
     auth_file = tmp_path / "auth.json"
     auth_file.write_text("{}", encoding="utf-8")
@@ -192,14 +193,16 @@ def test_room_start_expands_selected_team_templates(tmp_path, monkeypatch) -> No
     )
 
     assert response.status_code == 200
-    assert deployed == [
-        "controller",
+    room = response.json()
+    assert deployed == ["controller"]
+    assert room["planned_template_ids"] == [
         "critique-technical",
         "critique-user",
         "critique-business",
         "critique-risk",
         "idea-reviser",
     ]
+    assert [agent["template_id"] for agent in room["agents"]] == ["controller"]
 
 
 def test_share_contexts_list_direct_share_directories(tmp_path) -> None:

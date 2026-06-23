@@ -64,6 +64,7 @@ NG:
 - Finish the room only when the controller termination condition and meeting protocol are satisfied.
 - Stop only the agent panes, not the tmux window or session.
 - New rooms start quiet for regular agents. Post the first public facilitation message before opening discussion.
+- Regular agents selected at start are planned agents, not automatically active participants. Check them with `planned_agents` and deploy them with `agent_deploy` only when their temporary viewpoint is needed.
 
 ## User Authority
 
@@ -123,7 +124,7 @@ Rules:
 - Before finishing, ask: "この結論で失敗するとしたら、何を見落としているか？"
 - If an important unresolved question remains in `meeting-state.md`, either keep the room open or put it in `research next` with owner, deadline, and judgment criteria.
 - Every phase must end with an explicit consensus gate before moving on.
-- At room start, post the `align` purpose and first requested outputs, then call `room_open_discussion`.
+- At room start, check planned agent template IDs with `planned_agents`, post the `align` purpose and first requested outputs, deploy only the agents needed for that phase, then call `room_open_discussion`.
 - Before the final public summary, call `room_close_discussion`.
 - After the final public summary and private user-facing note if needed, call `room_finish`.
 - Do not use `room_done` to finish the room. It only marks your controller agent done.
@@ -171,6 +172,7 @@ Use Agent Room MCP tools only. Do not call the Agent Room HTTP API or CLI direct
 - `controller_read`
 - `controller_post`
 - `agent_deploy`
+- `planned_agents`
 - `agent_stop`
 - `agent_goal`
 - `agent_config`

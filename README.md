@@ -110,13 +110,14 @@ This keeps personality and agent config isolated without forcing each pane to lo
 4. Select shared context directories from `share/`.
 5. Select templates and teams.
 6. Press `Start`.
-7. The app creates one tmux pane per checked agent. `Controller` is always included.
-8. Each Codex TUI starts with `/goal`.
-9. Agents read selected shared context through `./share/<context-name>`.
-10. Agents read and post through the Agent Room MCP tools.
-11. The room starts quiet for regular agents, so the controller posts the first facilitation message and opens discussion.
-12. The controller closes discussion, posts the final summary, and finishes the room.
-13. Finishing the room closes all agent panes. A later Controller tab message resumes the controller session when possible.
+7. The app starts only the `Controller` pane. Checked regular agents are stored as planned agents.
+8. The controller checks planned agents with `planned_agents` and deploys them with `agent_deploy` only when their viewpoint is needed.
+9. Each deployed Codex TUI starts with `/goal`.
+10. Agents read selected shared context through `./share/<context-name>`.
+11. Agents read and post through the Agent Room MCP tools.
+12. The room starts quiet for regular agents, so the controller posts the first facilitation message and opens discussion.
+13. The controller closes discussion, posts the final summary, and finishes the room.
+14. Finishing the room closes all agent panes. A later Controller tab message resumes the controller session when possible.
 
 ## Workshop Flow
 
@@ -185,6 +186,7 @@ Controller agents also receive:
 - `controller_read`
 - `controller_post`
 - `agent_deploy`
+- `planned_agents`
 - `agent_stop`
 - `agent_goal`
 - `agent_config`

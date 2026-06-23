@@ -248,6 +248,20 @@ def create_agent_room_mcp(
             return call("POST", url(f"/api/rooms/{room_id}/agents"), payload)
 
         @mcp.tool
+        def planned_agents() -> list[str]:
+            """List planned regular agent template ids.
+
+            These are the regular agents selected when the room was started.
+            Deploy them with agent_deploy only when their temporary viewpoint
+            is needed for the current workshop phase.
+
+            Returns:
+                Planned regular agent template ids.
+            """
+            room = call("GET", url(f"/api/rooms/{room_id}"), None)
+            return list(room["planned_template_ids"])
+
+        @mcp.tool
         def agent_stop(target_agent_id: str, reason: str, force: bool) -> dict[str, Any]:
             """Stop an agent pane.
 

@@ -91,6 +91,7 @@ class Room(BaseModel):
     controller_termination: str
     agent_termination: str
     share_contexts: list[str]
+    planned_template_ids: list[str]
     agent_posting_closed: bool
     muted_agent_ids: list[str]
     state: RoomState

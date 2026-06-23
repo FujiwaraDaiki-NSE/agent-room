@@ -193,6 +193,7 @@ class TmuxManager:
             "",
             *goal_lines[1:],
             *self._share_context_lines(room.share_contexts),
+            *self._planned_participant_lines(room, template.scope == "controller"),
             "MCP tools:",
             "- room_read: read public room messages",
             "- room_post: post a public room message",
@@ -215,6 +216,7 @@ class TmuxManager:
                     "- controller_read: read private controller messages",
                     "- controller_post: post a private controller message",
                     "- agent_deploy: deploy agents",
+                    "- planned_agents: list planned regular agent template ids",
                     "- agent_stop: stop an agent pane",
                     "- agent_goal: send a new goal to an agent",
                     "- agent_config: update an agent runtime config",
@@ -227,6 +229,7 @@ class TmuxManager:
                     "",
                     "Use room_status_update before phase changes, after each round, and before final summaries.",
                     "The room starts quiet for regular agents. Post the first public facilitation message, then use room_open_discussion when agents should begin contributing.",
+                    "Use planned_agents to check selected regular agent templates. Deploy planned agents only when their viewpoint is needed for the current phase.",
                     "Use room_close_discussion before the final public summary, then use room_finish after the outcome is complete.",
                     "Do not use room_done to finish the room; it only marks your controller agent done.",
                     "Use controller tools for user-side whispers and lifecycle operations.",
@@ -243,6 +246,20 @@ class TmuxManager:
                 ]
             )
         return "\n".join(lines)
+
+    def _planned_participant_lines(self, room: Room, is_controller: bool) -> list[str]:
+        if not is_controller:
+            return []
+        lines = [
+            "Planned Agents:",
+            "Deploy these template IDs with agent_deploy when the workshop needs them.",
+        ]
+        if room.planned_template_ids:
+            lines.extend(f"- {template_id}" for template_id in room.planned_template_ids)
+        else:
+            lines.append("- No regular agents were selected.")
+        lines.append("")
+        return lines
 
     def _share_context_lines(self, share_contexts: list[str]) -> list[str]:
         lines = [
@@ -418,6 +435,7 @@ class TmuxManager:
                     "controller_read",
                     "controller_post",
                     "agent_deploy",
+                    "planned_agents",
                     "agent_stop",
                     "agent_goal",
                     "agent_config",

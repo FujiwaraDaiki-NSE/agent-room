@@ -89,6 +89,7 @@ class Store:
         controller_termination: str,
         agent_termination: str,
         share_contexts: list[str],
+        planned_template_ids: list[str],
         state: RoomState,
     ) -> Room:
         self._require("name", name)
@@ -104,6 +105,7 @@ class Store:
             room.controller_termination = controller_termination
             room.agent_termination = agent_termination
             room.share_contexts = share_contexts
+            room.planned_template_ids = planned_template_ids
             room.agent_posting_closed = True
             room.muted_agent_ids = []
             room.state = state
@@ -121,7 +123,11 @@ class Store:
                 "system",
                 None,
                 None,
-                {"name": name, "share_contexts": share_contexts},
+                {
+                    "name": name,
+                    "share_contexts": share_contexts,
+                    "planned_template_ids": planned_template_ids,
+                },
             )
             self._write(data)
         return room
@@ -404,6 +410,8 @@ class Store:
                 room["agent_termination"] = room.get("termination", "")
             if "share_contexts" not in room:
                 room["share_contexts"] = []
+            if "planned_template_ids" not in room:
+                room["planned_template_ids"] = []
             if "agent_posting_closed" not in room:
                 room["agent_posting_closed"] = False
             if "muted_agent_ids" not in room:
@@ -446,6 +454,7 @@ class Store:
             controller_termination=controller_termination,
             agent_termination=agent_termination,
             share_contexts=[],
+            planned_template_ids=[],
             agent_posting_closed=False,
             muted_agent_ids=[],
             state=state,

@@ -91,6 +91,7 @@ def test_configure_mcp_adds_controller_tools(tmp_path, monkeypatch) -> None:
         controller_termination="Controller done",
         agent_termination="Agents done",
         share_contexts=[],
+        planned_template_ids=[],
         agent_posting_closed=False,
         muted_agent_ids=[],
         state="open",
@@ -124,6 +125,7 @@ def test_configure_mcp_adds_controller_tools(tmp_path, monkeypatch) -> None:
     assert '"--controller"' in text
     assert '"controller_read"' in text
     assert '"agent_config"' in text
+    assert '"planned_agents"' in text
     assert '"room_status_update"' in text
     assert '"room_close_discussion"' in text
     assert '"room_finish"' in text
@@ -146,6 +148,7 @@ def test_configure_mcp_limits_regular_agent_tools(tmp_path, monkeypatch) -> None
         controller_termination="Controller done",
         agent_termination="Agents done",
         share_contexts=[],
+        planned_template_ids=[],
         agent_posting_closed=False,
         muted_agent_ids=[],
         state="open",
@@ -177,6 +180,7 @@ def test_configure_mcp_limits_regular_agent_tools(tmp_path, monkeypatch) -> None
     assert '"--controller"' not in text
     assert '"controller_read"' not in text
     assert '"agent_config"' not in text
+    assert '"planned_agents"' not in text
     assert '"room_status_update"' not in text
     assert '"room_close_discussion"' not in text
     assert '"room_finish"' not in text
@@ -223,6 +227,7 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
         controller_termination="Controller done",
         agent_termination="Agents done",
         share_contexts=["alpha"],
+        planned_template_ids=["critic", "researcher"],
         agent_posting_closed=False,
         muted_agent_ids=[],
         state="open",
@@ -291,16 +296,21 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "share_list" in controller_prompt
     assert "share_read" in controller_prompt
     assert "room_status_update" in controller_prompt
+    assert "planned_agents" in controller_prompt
     assert "room_close_discussion" in controller_prompt
     assert "room_finish" in controller_prompt
     assert "agent_mute" in controller_prompt
     assert "The room starts quiet for regular agents" in controller_prompt
     assert "room_open_discussion" in controller_prompt
+    assert "Planned Agents:" in controller_prompt
+    assert "- critic" in controller_prompt
+    assert "- researcher" in controller_prompt
     assert "uv run agent-room room" not in controller_prompt
     assert "room_close_discussion" not in agent_prompt
     assert "room_finish" not in agent_prompt
     assert "agent_mute" not in agent_prompt
     assert "Do not post before the controller's first public facilitation message" in agent_prompt
+    assert "Planned Agents:" not in agent_prompt
     assert "share_contexts" in agent_prompt
     assert "share_list" in agent_prompt
     assert "share_read" in agent_prompt
