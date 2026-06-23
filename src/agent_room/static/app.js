@@ -16,9 +16,9 @@ const state = {
 
 const TERMINATION_TEMPLATE = {
   controller:
-    "controllerがalign、diverge、cluster、deepen、evaluate、convergeを順に進め、採用候補、追加調査、見送り、担当、期限、次回判断条件を整理し、未解決の重要論点がない、または追加調査に明示的に送ったと判断したら。",
+    "controllerがalign、diverge、cluster、deepen、evaluate、convergeを順に進め、各phase末尾でaccept/revise/blockの合意ゲートを通し、絞り込み理由と異議処理を記録し、採用候補、追加調査、見送り、担当、期限、次回判断条件を整理したら。",
   agent:
-    "controllerが終了と判断するまでdoneしない。各agentはcontrollerから割り当てられた一時観点で短く発言し、発散中は評価せず、深掘り以降は案の目的、対象、効果、実現性、リスク、次の一手を具体化する。",
+    "controllerが終了と判断するまでdoneしない。各agentはcontrollerから割り当てられた一時観点で短く発言し、phase合意ではaccept/revise/blockのいずれかと理由を返す。開始直後はcontrollerの初回指示を待つ。",
 };
 
 const KNOWN_AGENT_STATES = new Set(["starting", "active", "idle", "speaking", "done", "stopped", "failed"]);

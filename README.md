@@ -114,8 +114,9 @@ This keeps personality and agent config isolated without forcing each pane to lo
 8. Each Codex TUI starts with `/goal`.
 9. Agents read selected shared context through `./share/<context-name>`.
 10. Agents read and post through the Agent Room MCP tools.
-11. The controller closes discussion, posts the final summary, and finishes the room.
-12. Finishing the room closes all agent panes. A later Controller tab message resumes the controller session when possible.
+11. The room starts quiet for regular agents, so the controller posts the first facilitation message and opens discussion.
+12. The controller closes discussion, posts the final summary, and finishes the room.
+13. Finishing the room closes all agent panes. A later Controller tab message resumes the controller session when possible.
 
 ## Workshop Flow
 
@@ -129,6 +130,10 @@ The controller runs the room as a workshop, not open-ended free discussion.
 6. `converge`: classify ideas into do now, research next, and drop for now; assign owner, deadline, and next judgment criteria.
 
 Agent personalities stay active, but meeting roles are temporary. The controller assigns different viewpoints to different agents each phase so one agent is not permanently fixed to one perspective.
+
+Every phase ends with a consensus gate. The controller posts the current synthesis, explains what will change if the room advances, and asks agents for `accept`, `revise`, or `block` with reasons. A blocker must be resolved, split, or moved to `research next` with owner, deadline, and judgment criteria before advancing.
+
+When narrowing ideas, the controller must explain the criteria, supporting evidence, selected ideas, dropped or merged ideas, accepted tradeoff, and what would change the decision later.
 
 ## Shared Context
 

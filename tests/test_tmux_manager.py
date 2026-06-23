@@ -294,10 +294,13 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "room_close_discussion" in controller_prompt
     assert "room_finish" in controller_prompt
     assert "agent_mute" in controller_prompt
+    assert "The room starts quiet for regular agents" in controller_prompt
+    assert "room_open_discussion" in controller_prompt
     assert "uv run agent-room room" not in controller_prompt
     assert "room_close_discussion" not in agent_prompt
     assert "room_finish" not in agent_prompt
     assert "agent_mute" not in agent_prompt
+    assert "Do not post before the controller's first public facilitation message" in agent_prompt
     assert "share_contexts" in agent_prompt
     assert "share_list" in agent_prompt
     assert "share_read" in agent_prompt

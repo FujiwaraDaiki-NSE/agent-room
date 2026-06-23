@@ -10,6 +10,7 @@ def test_room_message_and_done_flow(tmp_path) -> None:
     room = store.create_room("Spec", "Discuss the design", "Controller done", "Agents done", [], "open")
     assert room.meeting_status.phase == "Open"
     assert room.meeting_status.topic == "Discuss the design"
+    assert room.agent_posting_closed is True
 
     message = store.add_message(room.id, "user", "user", "User", "Start", "goal")
     assert message.id == 1

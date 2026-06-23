@@ -68,7 +68,7 @@ def test_api_room_without_agents(tmp_path) -> None:
     assert room["controller_termination"] == "Controller closes the room"
     assert room["agent_termination"] == "Each agent is done"
     assert room["share_contexts"] == []
-    assert room["agent_posting_closed"] is False
+    assert room["agent_posting_closed"] is True
     assert room["muted_agent_ids"] == []
     assert room["state"] == "open"
     assert room["meeting_status"]["phase"] == "Open"
@@ -553,6 +553,11 @@ def test_agent_mute_blocks_only_target_agent(tmp_path) -> None:
             agent_instance("builder-1", "builder", "active", "%3"),
         ],
     )
+    open_response = client.post(
+        f"/api/rooms/{room['id']}/discussion/open",
+        json={"actor_id": "controller-1", "reason": "start contributions"},
+    )
+    assert open_response.status_code == 200
 
     mute_response = client.post(
         f"/api/rooms/{room['id']}/agents/critic-1/mute",

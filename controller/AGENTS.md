@@ -63,6 +63,7 @@ NG:
 - Summarize disagreement into concrete options.
 - Finish the room only when the controller termination condition and meeting protocol are satisfied.
 - Stop only the agent panes, not the tmux window or session.
+- New rooms start quiet for regular agents. Post the first public facilitation message before opening discussion.
 
 ## User Authority
 
@@ -93,6 +94,9 @@ Track these fields:
 - shortlisted ideas
 - deep-dive notes per idea
 - evaluation axes and scores or qualitative ratings
+- consensus gate for each phase
+- objections, revisions, blockers, and how each was resolved
+- narrowing rationale for each dropped or selected idea
 - selected actions, owners, deadlines, and next judgment criteria
 - unresolved important questions
 
@@ -118,9 +122,41 @@ Rules:
 - During `converge`, always output `do now`, `research next`, and `drop for now`.
 - Before finishing, ask: "この結論で失敗するとしたら、何を見落としているか？"
 - If an important unresolved question remains in `meeting-state.md`, either keep the room open or put it in `research next` with owner, deadline, and judgment criteria.
+- Every phase must end with an explicit consensus gate before moving on.
+- At room start, post the `align` purpose and first requested outputs, then call `room_open_discussion`.
 - Before the final public summary, call `room_close_discussion`.
 - After the final public summary and private user-facing note if needed, call `room_finish`.
 - Do not use `room_done` to finish the room. It only marks your controller agent done.
+
+### Consensus Gates
+
+Consensus is not simple silence or majority preference. It means the room has seen the controller's current framing, reasons, and tradeoffs, and no important unresolved blocker is being ignored.
+
+At the end of every phase:
+
+1. Post the current controller synthesis.
+2. Name what will change if the room moves to the next phase.
+3. Ask selected agents, or all agents for major transitions, to answer with exactly one state: `accept`, `revise`, or `block`.
+4. Require a reason for every `accept`, `revise`, or `block`.
+5. If any `block` remains, do not advance. Either revise the synthesis, split the disputed item, or move it to `research next` with owner, deadline, and judgment criteria.
+6. Record the gate result in `meeting-state.md` and `room_status_update`.
+
+Use `accept` only when the agent can live with the phase output and understands why alternatives were not chosen.
+Use `revise` when the direction is acceptable but wording, grouping, evidence, owner, or next step must change.
+Use `block` when moving forward would hide a material risk, unsupported assumption, or unresolved decision.
+
+### Narrowing Discipline
+
+When reducing ideas or choosing candidates, do not merely pick. Explain the narrowing logic before asking for agreement:
+
+- criteria used
+- evidence or room statements supporting the criteria
+- why selected ideas remain
+- why dropped ideas are dropped, merged, or moved to `research next`
+- what tradeoff the room is accepting
+- what would change the decision later
+
+Ask at least one agent to challenge the narrowing rationale from a temporary viewpoint different from their default lens.
 
 ## MCP Tools
 

@@ -226,9 +226,20 @@ class TmuxManager:
                     "- agent_unmute: unmute one regular agent's public messages",
                     "",
                     "Use room_status_update before phase changes, after each round, and before final summaries.",
+                    "The room starts quiet for regular agents. Post the first public facilitation message, then use room_open_discussion when agents should begin contributing.",
                     "Use room_close_discussion before the final public summary, then use room_finish after the outcome is complete.",
                     "Do not use room_done to finish the room; it only marks your controller agent done.",
                     "Use controller tools for user-side whispers and lifecycle operations.",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "",
+                    "Start discipline:",
+                    "- Do not post before the controller's first public facilitation message.",
+                    "- Speak only when the controller names you, requests all agents, or assigns your current temporary viewpoint.",
+                    "- If room_post is rejected because the discussion is closed, read the room again later and wait for the controller.",
                 ]
             )
         return "\n".join(lines)

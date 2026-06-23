@@ -104,7 +104,7 @@ class Store:
             room.controller_termination = controller_termination
             room.agent_termination = agent_termination
             room.share_contexts = share_contexts
-            room.agent_posting_closed = False
+            room.agent_posting_closed = True
             room.muted_agent_ids = []
             room.state = state
             room.meeting_status = meeting_status(self._room_state_label(state), goal, "", "Controller", None)
