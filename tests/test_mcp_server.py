@@ -117,6 +117,7 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
             },
         )
         close_result = await client.call_tool("room_close_discussion", {"reason": "final summary"})
+        finish_result = await client.call_tool("room_finish", {"reason": "workshop complete"})
         mute_result = await client.call_tool("agent_mute", {"target_agent_id": "critic-1", "reason": "over limit"})
 
     assert {
@@ -135,6 +136,7 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
         "room_status_update",
         "room_close_discussion",
         "room_open_discussion",
+        "room_finish",
         "agent_mute",
         "agent_unmute",
     } == names
@@ -149,6 +151,7 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
         "next",
     ]
     assert schema_by_name["room_close_discussion"]["required"] == ["reason"]
+    assert schema_by_name["room_finish"]["required"] == ["reason"]
     assert schema_by_name["agent_mute"]["required"] == ["target_agent_id", "reason"]
     assert result.data["payload"]["actor_type"] == "controller"
     assert status_result.data["payload"] == {
@@ -161,9 +164,11 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
         "next": "Ask final objections",
     }
     assert close_result.data["payload"] == {"actor_id": "controller-1", "reason": "final summary"}
+    assert finish_result.data["payload"] == {"actor_id": "controller-1", "reason": "workshop complete"}
     assert mute_result.data["payload"] == {"actor_id": "controller-1", "reason": "over limit"}
-    assert calls[-4][1] == "http://server/api/rooms/room-1/controller/messages"
-    assert calls[-3][0] == "PUT"
-    assert calls[-3][1] == "http://server/api/rooms/room-1/status"
-    assert calls[-2][1] == "http://server/api/rooms/room-1/discussion/close"
+    assert calls[-5][1] == "http://server/api/rooms/room-1/controller/messages"
+    assert calls[-4][0] == "PUT"
+    assert calls[-4][1] == "http://server/api/rooms/room-1/status"
+    assert calls[-3][1] == "http://server/api/rooms/room-1/discussion/close"
+    assert calls[-2][1] == "http://server/api/rooms/room-1/done"
     assert calls[-1][1] == "http://server/api/rooms/room-1/agents/critic-1/mute"

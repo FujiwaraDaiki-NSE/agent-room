@@ -377,7 +377,7 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
     @app.post("/api/rooms/{room_id}/done")
     async def mark_room_done(room_id: str, request: MarkDoneRequest) -> dict[str, Any]:
         try:
-            _stop_room_panes(room_id, request.actor_id, request.reason, False, True)
+            _stop_room_panes(room_id, request.actor_id, request.reason, False, False)
             room = store.set_room_state(room_id, "done", request.actor_id, request.reason)
             await hub.broadcast(room_id, {"type": "room.done", "room": room.model_dump()})
             return room.model_dump()
@@ -486,9 +486,8 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
         for agent in room.agents:
             if keep_controller and agent.template_id == "controller":
                 continue
-            if not agent.pane_id:
-                continue
-            tmux.stop(agent, force)
+            if agent.pane_id:
+                tmux.stop(agent, force)
             store.update_agent(
                 room_id,
                 agent.id,

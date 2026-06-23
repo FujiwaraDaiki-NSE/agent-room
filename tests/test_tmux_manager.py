@@ -126,6 +126,7 @@ def test_configure_mcp_adds_controller_tools(tmp_path, monkeypatch) -> None:
     assert '"agent_config"' in text
     assert '"room_status_update"' in text
     assert '"room_close_discussion"' in text
+    assert '"room_finish"' in text
     assert '"agent_mute"' in text
 
 
@@ -178,6 +179,7 @@ def test_configure_mcp_limits_regular_agent_tools(tmp_path, monkeypatch) -> None
     assert '"agent_config"' not in text
     assert '"room_status_update"' not in text
     assert '"room_close_discussion"' not in text
+    assert '"room_finish"' not in text
     assert '"agent_mute"' not in text
 
 
@@ -290,9 +292,11 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "share_read" in controller_prompt
     assert "room_status_update" in controller_prompt
     assert "room_close_discussion" in controller_prompt
+    assert "room_finish" in controller_prompt
     assert "agent_mute" in controller_prompt
     assert "uv run agent-room room" not in controller_prompt
     assert "room_close_discussion" not in agent_prompt
+    assert "room_finish" not in agent_prompt
     assert "agent_mute" not in agent_prompt
     assert "share_contexts" in agent_prompt
     assert "share_list" in agent_prompt

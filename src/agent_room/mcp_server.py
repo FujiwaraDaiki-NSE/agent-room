@@ -29,7 +29,10 @@ def create_agent_room_mcp(
         "and mark yourself done only when your assigned termination condition is met."
     )
     if is_controller:
-        instructions += " Controller tools can manage agents, meeting status, and private user-side whispers."
+        instructions += (
+            " Controller tools can manage agents, meeting status, and private user-side whispers. "
+            "Use room_finish, not room_done, to finish the room."
+        )
     mcp = FastMCP(name="Agent Room", instructions=instructions)
     call = request_fn
     base_url = server_url.rstrip("/")
@@ -108,7 +111,8 @@ def create_agent_room_mcp(
         """Mark this agent as done.
 
         This tool updates this agent's state. Use it only when your assigned
-        termination condition is satisfied.
+        termination condition is satisfied. Controllers should use room_finish,
+        not this tool, to finish the room.
 
         Args:
             reason: Short reason why this agent is done.
@@ -382,6 +386,24 @@ def create_agent_room_mcp(
             """
             payload = {"actor_id": agent_id, "reason": reason}
             return call("POST", url(f"/api/rooms/{room_id}/discussion/open"), payload)
+
+        @mcp.tool
+        def room_finish(reason: str) -> dict[str, Any]:
+            """Finish the room and close all agent panes.
+
+            Use this after the controller final summary when the workshop
+            outcome is complete. This marks the room done and closes every
+            Codex agent pane, including the controller pane. A later private
+            controller message can resume the controller session.
+
+            Args:
+                reason: Short reason why the workshop is complete.
+
+            Returns:
+                The updated room state.
+            """
+            payload = {"actor_id": agent_id, "reason": reason}
+            return call("POST", url(f"/api/rooms/{room_id}/done"), payload)
 
         @mcp.tool
         def agent_mute(target_agent_id: str, reason: str) -> dict[str, Any]:

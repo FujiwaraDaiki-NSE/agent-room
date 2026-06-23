@@ -221,10 +221,13 @@ class TmuxManager:
                     "- room_status_update: update the user-visible meeting status",
                     "- room_close_discussion: close public discussion for regular agents",
                     "- room_open_discussion: reopen public discussion for regular agents",
+                    "- room_finish: mark the room done and close all agent panes",
                     "- agent_mute: mute one regular agent's public messages",
                     "- agent_unmute: unmute one regular agent's public messages",
                     "",
                     "Use room_status_update before phase changes, after each round, and before final summaries.",
+                    "Use room_close_discussion before the final public summary, then use room_finish after the outcome is complete.",
+                    "Do not use room_done to finish the room; it only marks your controller agent done.",
                     "Use controller tools for user-side whispers and lifecycle operations.",
                 ]
             )
@@ -410,6 +413,7 @@ class TmuxManager:
                     "room_status_update",
                     "room_close_discussion",
                     "room_open_discussion",
+                    "room_finish",
                     "agent_mute",
                     "agent_unmute",
                 ]

@@ -16,9 +16,9 @@ const state = {
 
 const TERMINATION_TEMPLATE = {
   controller:
-    "controllerがdecision phaseに入り、controllerを除く多数が同意し、最低3ラウンド以上の討論を行い、各agentが少なくとも1回は反論・留保・代替仮説のいずれかを提示し、meeting-state.md上で未解決の重要論点がないとcontrollerが判断したら。",
+    "controllerがalign、diverge、cluster、deepen、evaluate、convergeを順に進め、採用候補、追加調査、見送り、担当、期限、次回判断条件を整理し、未解決の重要論点がない、または追加調査に明示的に送ったと判断したら。",
   agent:
-    "controllerが終了と判断するまでdoneしない。各agentは最低1回、反論・留保・代替仮説・追加調査観点のいずれかを提示してから終了可能とする。",
+    "controllerが終了と判断するまでdoneしない。各agentはcontrollerから割り当てられた一時観点で短く発言し、発散中は評価せず、深掘り以降は案の目的、対象、効果、実現性、リスク、次の一手を具体化する。",
 };
 
 const KNOWN_AGENT_STATES = new Set(["starting", "active", "idle", "speaking", "done", "stopped", "failed"]);

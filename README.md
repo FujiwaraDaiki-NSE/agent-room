@@ -114,7 +114,21 @@ This keeps personality and agent config isolated without forcing each pane to lo
 8. Each Codex TUI starts with `/goal`.
 9. Agents read selected shared context through `./share/<context-name>`.
 10. Agents read and post through the Agent Room MCP tools.
-11. The controller marks the room done or stops agent panes.
+11. The controller closes discussion, posts the final summary, and finishes the room.
+12. Finishing the room closes all agent panes. A later Controller tab message resumes the controller session when possible.
+
+## Workshop Flow
+
+The controller runs the room as a workshop, not open-ended free discussion.
+
+1. `align`: align the goal, decision scope, expected output, and action format.
+2. `diverge`: collect many ideas without judging them.
+3. `cluster`: group similar ideas and name the main directions.
+4. `deepen`: choose 2-3 promising directions and examine purpose, target, effect, feasibility, risk, and first experiment.
+5. `evaluate`: compare shortlisted ideas by effect, feasibility, urgency, and cost.
+6. `converge`: classify ideas into do now, research next, and drop for now; assign owner, deadline, and next judgment criteria.
+
+Agent personalities stay active, but meeting roles are temporary. The controller assigns different viewpoints to different agents each phase so one agent is not permanently fixed to one perspective.
 
 ## Shared Context
 
@@ -138,7 +152,7 @@ Room start waits for these runtime copies and agent deployment to finish before 
 - `Start`: Start the current room from the form and deploy the checked templates.
 
 `Teams` check or clear matching template checkboxes. `Default` contains the original starter set. `Critique Lab` contains perspective-specific critics and an idea revision agent. `Malcontent Table` contains complaint-heavy agents, including one sharp insult critic and a relaxed skeptical debater.
-- `Close`: Stop the current room and close only its agent panes.
+- `Close`: Stop the current room manually and close its agent panes.
 - `Refresh`: Reload templates, the current room, messages, and tmux status.
 
 The app keeps only one current room. Use `New` to clear the public log and controller private log by replacing the room.
@@ -147,6 +161,7 @@ After `Start`, the top brief keeps `Goal`, `Controller Termination`, and `Agent 
 The live room shows controller-managed meeting status, a compact participant roster, round table, bottom progress strip, and activity rail.
 
 The `Controller` tab is private. Use it for instructions or whispers that should go only to the controller.
+If the controller pane is closed, a Controller tab message resumes the saved controller Codex session when possible.
 
 ## Agent MCP Tools
 
@@ -171,12 +186,15 @@ Controller agents also receive:
 - `room_status_update`
 - `room_close_discussion`
 - `room_open_discussion`
+- `room_finish`
 - `agent_mute`
 - `agent_unmute`
 
 `agent config` writes only to the copied runtime directory for that agent. Template originals under `agent-templates/` are not modified during a meeting.
+`room_done` marks only the calling agent done.
 `room_status_update` updates the left-side `Meeting` panel and bottom progress strip for the user.
 `room_close_discussion` stops regular agents from posting public messages while allowing controller and user messages.
+`room_finish` marks the room done and closes every agent pane, including the controller pane. Use the Controller tab to resume the controller later.
 `agent_mute` stops one regular agent from posting public messages without closing its pane.
 Use `share_contexts`, `share_list`, and `share_read` to inspect selected shared context. Runtime snapshots are also present under `./share/`, so shell tools such as `rg` and `find` can inspect them directly.
 
@@ -190,7 +208,8 @@ uv run agent-room mcp --server http://127.0.0.1:8765 --room-id <room-id> --agent
 
 ## Stop
 
-Use `Stop` in the GUI to stop the room. The app closes agent panes only.
+Use `Close` in the GUI to stop the room manually. The app closes agent panes only.
+Controller-led workshop completion uses `room_finish`, which marks the room done and closes every agent pane.
 
 Manual pane close:
 
