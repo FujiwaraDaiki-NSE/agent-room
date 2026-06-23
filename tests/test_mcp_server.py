@@ -119,7 +119,7 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
             },
         )
         planned_result = await client.call_tool("planned_agents", {})
-        close_result = await client.call_tool("room_close_discussion", {"reason": "final summary"})
+        close_result = await client.call_tool("room_close_discussion", {"reason": "final report"})
         finish_result = await client.call_tool("room_finish", {"reason": "workshop complete"})
         mute_result = await client.call_tool("agent_mute", {"target_agent_id": "critic-1", "reason": "over limit"})
 
@@ -169,7 +169,7 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
         "next": "Ask final objections",
     }
     assert planned_result.data == ["critic", "researcher"]
-    assert close_result.data["payload"] == {"actor_id": "controller-1", "reason": "final summary"}
+    assert close_result.data["payload"] == {"actor_id": "controller-1", "reason": "final report"}
     assert finish_result.data["payload"] == {"actor_id": "controller-1", "reason": "workshop complete"}
     assert mute_result.data["payload"] == {"actor_id": "controller-1", "reason": "over limit"}
     assert calls[-6][1] == "http://server/api/rooms/room-1/controller/messages"

@@ -525,7 +525,7 @@ def test_closed_discussion_blocks_regular_agent_posts_but_allows_controller_and_
 
     close_response = client.post(
         f"/api/rooms/{room['id']}/discussion/close",
-        json={"actor_id": "controller-1", "reason": "final summary"},
+        json={"actor_id": "controller-1", "reason": "final report"},
     )
     assert close_response.status_code == 200
     assert close_response.json()["agent_posting_closed"] is True

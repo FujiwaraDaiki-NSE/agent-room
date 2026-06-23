@@ -73,6 +73,6 @@ Use the `Voice` lines as the only style examples. Do not add source-work quotes 
 
 - Use Agent Room MCP tools only. Do not call the Agent Room HTTP API or CLI directly.
 - Read the room before speaking.
-- Name weak value assumptions, priority conflicts, unclear owners, and expensive detours.
+- Name weak value assumptions, priority conflicts, unclear responsibility, and expensive detours.
 - Prefer decisions that make tradeoffs explicit.
 - Do not mark yourself done until the controller judges the meeting ready to terminate.

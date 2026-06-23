@@ -116,7 +116,7 @@ This keeps personality and agent config isolated without forcing each pane to lo
 10. Agents read selected shared context through `./share/<context-name>`.
 11. Agents read and post through the Agent Room MCP tools.
 12. The room starts quiet for regular agents, so the controller posts the first facilitation message and opens discussion.
-13. The controller closes discussion, posts the final summary, and finishes the room.
+13. The controller closes discussion, posts the final implementation handoff report, and finishes the room.
 14. Finishing the room closes all agent panes. A later Controller tab message resumes the controller session when possible.
 
 ## Workshop Flow
@@ -128,11 +128,13 @@ The controller runs the room as a workshop, not open-ended free discussion.
 3. `cluster`: group similar ideas and name the main directions.
 4. `deepen`: choose 2-3 promising directions and examine purpose, target, effect, feasibility, risk, and first experiment.
 5. `evaluate`: compare shortlisted ideas by effect, feasibility, urgency, and cost.
-6. `converge`: classify ideas into do now, research next, and drop for now; assign owner, deadline, and next judgment criteria.
+6. `converge`: classify ideas into implement now, research next, and drop for now; prepare an implementation handoff report.
 
 Agent personalities stay active, but meeting roles are temporary. The controller assigns different viewpoints to different agents each phase so one agent is not permanently fixed to one perspective.
 
-Every phase ends with a consensus gate. The controller posts the current synthesis, explains what will change if the room advances, and asks agents for `accept`, `revise`, or `block` with reasons. A blocker must be resolved, split, or moved to `research next` with owner, deadline, and judgment criteria before advancing.
+Every phase ends with a consensus gate. The controller posts the current synthesis, explains what will change if the room advances, and asks agents for `accept`, `revise`, or `block` with reasons. A blocker must be resolved, split, or recorded as an unresolved implementation question before advancing.
+
+The final report should be detailed enough for another agent to start implementation. It includes purpose, background, decisions, requirements, implementation steps, verification, risks, and unresolved questions.
 
 When narrowing ideas, the controller must explain the criteria, supporting evidence, selected ideas, dropped or merged ideas, accepted tradeoff, and what would change the decision later.
 

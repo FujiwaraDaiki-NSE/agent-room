@@ -228,10 +228,10 @@ class TmuxManager:
                     "- agent_mute: mute one regular agent's public messages",
                     "- agent_unmute: unmute one regular agent's public messages",
                     "",
-                    "Use room_status_update before phase changes, after each round, and before final summaries.",
+                    "Use room_status_update before phase changes, after each round, and before final reports.",
                     "The room starts quiet for regular agents. Post the first public facilitation message, then use room_open_discussion when agents should begin contributing.",
                     "Use planned_agents to check selected regular agent templates. Deploy planned agents only when their viewpoint is needed for the current phase.",
-                    "Use room_close_discussion before the final public summary, then use room_finish after the outcome is complete.",
+                    "Use room_close_discussion before the final public report, then use room_finish after the outcome is complete.",
                     "Do not use room_done to finish the room; it only marks your controller agent done.",
                     "Use controller tools for user-side whispers and lifecycle operations.",
                 ]

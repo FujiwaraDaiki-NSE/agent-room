@@ -74,7 +74,7 @@ def test_discussion_close_is_room_state(tmp_path) -> None:
     store = Store(tmp_path)
     room = store.create_room("Spec", "Discuss", "Controller done", "Agents done", [], [], "open")
 
-    closed = store.set_agent_posting_closed(room.id, True, "controller-1", "final summary")
+    closed = store.set_agent_posting_closed(room.id, True, "controller-1", "final report")
 
     assert closed.agent_posting_closed is True
     assert store.list_events(room.id)[-1].type == "room.discussion_closed"

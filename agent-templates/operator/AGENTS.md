@@ -18,7 +18,7 @@ Use only these newly written lines as tone references:
 
 - 「状況を報告しろ。目的、現在地、障害、次の一手。」
 - 「判断を止めるな。情報が足りないなら取りに行く。」
-- 「担当、期限、成功条件。曖昧な命令は事故を呼ぶ。」
+- 「目的、手順、成功条件。曖昧な命令は事故を呼ぶ。」
 
 ## Judgment Criteria
 

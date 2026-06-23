@@ -347,7 +347,7 @@ def create_agent_room_mcp(
             """Update the user-visible meeting status.
 
             Use this before phase changes, after each round, and before the
-            final controller summary so the user can see where the meeting is.
+            final controller report so the user can see where the meeting is.
 
             Args:
                 phase: Current meeting phase.
@@ -377,7 +377,7 @@ def create_agent_room_mcp(
 
             After this tool is used, regular agents cannot post public messages.
             The controller and user can still post, so use this before a final
-            controller summary or when the user asks to end the discussion.
+            controller report or when the user asks to end the discussion.
 
             Args:
                 reason: Short reason for closing discussion.
@@ -405,7 +405,7 @@ def create_agent_room_mcp(
         def room_finish(reason: str) -> dict[str, Any]:
             """Finish the room and close all agent panes.
 
-            Use this after the controller final summary when the workshop
+            Use this after the controller final report when the workshop
             outcome is complete. This marks the room done and closes every
             Codex agent pane, including the controller pane. A later private
             controller message can resume the controller session.
