@@ -1,6 +1,6 @@
 {
   "id": "malcontent-table",
-  "name": "Malcontent Table",
+  "name": "不満卓",
   "summary": "不満屋と本質悪口",
   "templates": [
     "malcontent-user",

@@ -1,6 +1,6 @@
 {
   "id": "critique-lab",
-  "name": "Critique Lab",
+  "name": "批判ラボ",
   "summary": "視点別 critic と軌道修正役",
   "templates": [
     "critique-technical",

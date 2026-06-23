@@ -1,6 +1,6 @@
 {
   "id": "default",
-  "name": "Default",
+  "name": "基本チーム",
   "summary": "最初の構成",
   "templates": [
     "critic",

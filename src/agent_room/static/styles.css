@@ -456,6 +456,91 @@ body[data-room-state="open"] .controlPanel textarea {
   color: var(--muted);
 }
 
+.meetingTransitions {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.transitionPath {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: #25323f;
+  background: #fbfcfd;
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.transitionArrow {
+  color: var(--subtle);
+  font-weight: 720;
+}
+
+.transitionHistory {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  list-style: none;
+}
+
+.transitionHistory li {
+  min-width: 0;
+  padding: 7px 0 7px 10px;
+  border-left: 3px solid var(--line-strong);
+  display: grid;
+  gap: 3px;
+}
+
+.transitionHistory li.currentTransition {
+  border-left-color: var(--action);
+}
+
+.transitionHistory div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.transitionHistory strong,
+.transitionHistory time,
+.transitionHistory p,
+.transitionHistory small,
+.transitionEmpty {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.38;
+}
+
+.transitionHistory strong {
+  color: var(--ink);
+  font-weight: 760;
+}
+
+.transitionHistory time,
+.transitionHistory small,
+.transitionEmpty {
+  color: var(--muted);
+}
+
+.transitionHistory p {
+  margin: 0;
+  color: #25323f;
+  overflow-wrap: anywhere;
+}
+
+.transitionHistory small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
 .field {
   display: grid;
   gap: 6px;

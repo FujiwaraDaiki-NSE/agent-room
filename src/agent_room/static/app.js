@@ -6,6 +6,7 @@ const state = {
   room: null,
   messages: [],
   controllerMessages: [],
+  events: [],
   ws: null,
   activeChat: "messages",
   pendingAction: "",
@@ -22,6 +23,101 @@ const TERMINATION_TEMPLATE = {
 };
 
 const KNOWN_AGENT_STATES = new Set(["starting", "active", "idle", "speaking", "done", "stopped", "failed"]);
+
+const STATE_LABELS = {
+  draft: "下書き",
+  starting: "起動中",
+  open: "進行中",
+  done: "完了",
+  stopped: "停止",
+  failed: "失敗",
+  active: "稼働中",
+  idle: "待機",
+  speaking: "発言中",
+};
+
+const PHASE_LABELS = {
+  align: "整列",
+  diverge: "発散",
+  cluster: "整理",
+  deepen: "深掘り",
+  evaluate: "評価",
+  converge: "収束",
+  draft: "下書き",
+  starting: "起動中",
+  open: "開始",
+  done: "完了",
+  stopped: "停止",
+  synthesis: "統合",
+  research: "調査",
+  final: "最終",
+  summary: "要約",
+};
+
+const ACTOR_LABELS = {
+  User: "ユーザー",
+  System: "システム",
+  Controller: "進行役",
+  "Zhuge Liang": "諸葛孔明",
+  Kongming: "孔明",
+  "Senku Ishigami": "石神千空",
+  Senku: "千空",
+  "Sherlock Holmes": "シャーロック・ホームズ",
+  Holmes: "ホームズ",
+  "Armin Arlert": "アルミン・アルレルト",
+  Armin: "アルミン",
+  Shiroe: "シロエ",
+  "Roy Mustang": "ロイ・マスタング",
+  Roy: "ロイ",
+  "Seto Kaiba": "海馬瀬人",
+  Kaiba: "海馬",
+  Batman: "バットマン",
+  Bulma: "ブルマ",
+  "Usagi Tsukino": "月野うさぎ",
+  Usagi: "うさぎ",
+  Doraemon: "ドラえもん",
+  Dora: "ドラ",
+  "Levi Ackerman": "リヴァイ・アッカーマン",
+  Levi: "リヴァイ",
+  "Katsuki Bakugo": "爆豪勝己",
+  Bakugo: "爆豪",
+  "Asuka Langley": "惣流・アスカ・ラングレー",
+  Asuka: "アスカ",
+  "Hiroyuki Nishimura": "西村ひろゆき",
+  Hiroyuki: "ひろゆき",
+  Default: "基本チーム",
+  "Critique Lab": "批判ラボ",
+  "Malcontent Table": "不満卓",
+};
+
+const ROLE_LABELS = {
+  control: "進行管理",
+  implementation: "実装",
+  review: "レビュー",
+  synthesis: "統合",
+  facilitation: "司会補佐",
+  operations: "運用管制",
+  research: "調査",
+  "technical critique": "技術批判",
+  "user critique": "利用者批判",
+  "business critique": "事業批判",
+  "risk critique": "リスク批判",
+  "idea revision": "軌道修正",
+  "user complaint": "利用者不満",
+  "operations complaint": "運用小言",
+  "sharp insult critique": "本質批判",
+  "skeptical debater": "懐疑討論",
+};
+
+const MESSAGE_TAG_LABELS = {
+  user: "ユーザー",
+  agent: "Agent",
+  controller: "進行役",
+  system: "システム",
+  facilitation: "進行",
+  goal: "目的",
+  state: "状態",
+};
 
 const $ = (id) => document.getElementById(id);
 
@@ -116,6 +212,7 @@ async function resetRoom() {
   });
   state.messages = [];
   state.controllerMessages = [];
+  state.events = [];
   clearBubbles();
   $("goal").value = "";
   setTerminationTemplate();
@@ -143,13 +240,17 @@ async function startRoom() {
 
 async function loadRoom() {
   if (!state.room) {
+    state.events = [];
     renderRoom();
     return;
   }
   state.room = await api(`/api/rooms/${state.room.id}`);
   syncRoomForm();
-  state.messages = await api(`/api/rooms/${state.room.id}/messages`);
-  state.controllerMessages = await api(`/api/rooms/${state.room.id}/controller/messages`);
+  [state.messages, state.controllerMessages, state.events] = await Promise.all([
+    api(`/api/rooms/${state.room.id}/messages`),
+    api(`/api/rooms/${state.room.id}/controller/messages`),
+    api(`/api/rooms/${state.room.id}/events`),
+  ]);
   renderRoom();
 }
 
@@ -207,12 +308,16 @@ function connectRoom() {
       state.room = payload.room;
       state.messages = [];
       state.controllerMessages = [];
+      state.events = [];
       clearBubbles();
       connectRoom();
       await loadRoom();
       return;
     }
-    if (payload.room) state.room = payload.room;
+    if (payload.room) {
+      state.room = payload.room;
+      if (payload.type === "room.status_updated") trackStatusEvent(payload.room);
+    }
     renderRoom();
   };
 }
@@ -307,7 +412,7 @@ function renderTemplates() {
         <label class="templateCard" style="--accent:${safeColor(template.accent)}">
           <img src="${escapeHtml(template.avatarUrl)}" alt="" />
           <span>
-            <strong>${escapeHtml(template.name)}</strong>
+            <strong>${escapeHtml(displayName(template.name))}</strong>
             <span>${escapeHtml(template.personality)}</span>
           </span>
           <input data-template-check type="checkbox" value="${escapeHtml(template.id)}" ${template.scope === "controller" ? "checked disabled" : ""} />
@@ -320,17 +425,17 @@ function renderTemplates() {
 
 function renderTeams() {
   if (!state.teams.length) {
-    $("teamList").innerHTML = `<div class="emptyState">No teams</div>`;
+    $("teamList").innerHTML = `<div class="emptyState">チームなし</div>`;
     return;
   }
-  const templateNames = new Map(state.templates.map((template) => [template.id, template.name]));
+  const templateNames = new Map(state.templates.map((template) => [template.id, displayName(template.name)]));
   $("teamList").innerHTML = state.teams
     .map((team) => {
       const members = team.templates.map((templateId) => templateNames.get(templateId)).join(" / ");
       return `
         <label class="teamCard">
           <span>
-            <strong>${escapeHtml(team.name)}</strong>
+            <strong>${escapeHtml(displayName(team.name))}</strong>
             <span>${escapeHtml(team.summary)}</span>
             <small>${escapeHtml(members)}</small>
           </span>
@@ -345,7 +450,7 @@ function renderTeams() {
 function renderShareContexts() {
   const selected = new Set(state.room && state.room.share_contexts ? state.room.share_contexts : []);
   if (!state.shareContexts.length) {
-    $("shareContextList").innerHTML = `<div class="emptyState">No contexts</div>`;
+    $("shareContextList").innerHTML = `<div class="emptyState">共有文脈なし</div>`;
     return;
   }
   $("shareContextList").innerHTML = state.shareContexts
@@ -363,45 +468,144 @@ function renderShareContexts() {
 function renderDeploy() {
   const options = state.templates.filter((template) => template.launch && template.scope !== "controller");
   $("deployTemplate").innerHTML = options
-    .map((template) => `<option value="${escapeHtml(template.id)}">${escapeHtml(template.name)}</option>`)
+    .map((template) => `<option value="${escapeHtml(template.id)}">${escapeHtml(displayName(template.name))}</option>`)
     .join("");
 }
 
 function renderRoom() {
   const room = state.room;
-  $("activeRoom").textContent = room ? `${room.state}${room.agent_posting_closed ? " · quiet" : ""} · ${state.messages.length}` : "No room";
-  $("roomState").textContent = room ? stateLabel(room.state) : "Idle";
-  $("tableState").textContent = room ? stateLabel(room.state) : "Idle";
-  $("setupState").textContent = room ? stateLabel(room.state) : "Draft";
+  $("activeRoom").textContent = room
+    ? `${stateLabel(room.state)}${room.agent_posting_closed ? " · 静か" : ""} · ${state.messages.length}`
+    : "Roomなし";
+  $("roomState").textContent = room ? stateLabel(room.state) : "待機";
+  $("tableState").textContent = room ? stateLabel(room.state) : "待機";
+  $("setupState").textContent = room ? stateLabel(room.state) : "下書き";
   renderBrief(room);
   renderShareContexts();
   renderAgents(room ? room.agents : []);
   renderMeetingStatus(room);
   renderProgressStrip(room);
   renderRoster(room ? room.agents : []);
-  renderMessageList("messages", state.messages, "No messages", false);
-  renderMessageList("controllerMessages", state.controllerMessages, "No whispers", true);
+  renderMessageList("messages", state.messages, "発言なし", false);
+  renderMessageList("controllerMessages", state.controllerMessages, "非公開発言なし", true);
   renderControls();
 }
 
 function renderBrief(room) {
-  $("briefGoal").textContent = room && room.goal ? room.goal : "Draft";
+  $("briefGoal").textContent = room && room.goal ? localizeText(room.goal) : "下書き";
   $("briefControllerTermination").textContent =
-    room && room.controller_termination ? room.controller_termination : "Draft";
-  $("briefAgentTermination").textContent = room && room.agent_termination ? room.agent_termination : "Draft";
+    room && room.controller_termination ? localizeText(room.controller_termination) : "下書き";
+  $("briefAgentTermination").textContent = room && room.agent_termination ? localizeText(room.agent_termination) : "下書き";
   $("briefShareContexts").textContent =
-    room && room.share_contexts && room.share_contexts.length ? room.share_contexts.join(", ") : "None";
+    room && room.share_contexts && room.share_contexts.length ? room.share_contexts.join(", ") : "なし";
 }
 
 function renderMeetingStatus(room) {
   const status = room ? room.meeting_status : null;
-  $("meetingPhase").textContent = status ? status.phase : "Draft";
-  $("meetingTopic").textContent = status && status.topic ? status.topic : "None";
-  $("meetingSummary").textContent = status && status.summary ? status.summary : "Pending";
-  $("meetingNext").textContent = status && status.next ? status.next : "Controller";
-  $("meetingStatusUpdated").textContent = status && status.updated_at ? formatTime(status.updated_at) : "Pending";
-  renderStatusList("meetingDecisions", status ? status.decisions : [], "None");
-  renderStatusList("meetingOpenQuestions", status ? status.open_questions : [], "None");
+  $("meetingPhase").textContent = status ? phaseLabel(status.phase) : "下書き";
+  $("meetingTopic").textContent = status && status.topic ? localizeText(status.topic) : "なし";
+  $("meetingSummary").textContent = status && status.summary ? localizeText(status.summary) : "保留";
+  $("meetingNext").textContent = status && status.next ? localizeText(status.next) : "進行役";
+  $("meetingStatusUpdated").textContent = status && status.updated_at ? formatTime(status.updated_at) : "保留";
+  renderStatusList("meetingDecisions", status ? status.decisions : [], "なし");
+  renderStatusList("meetingOpenQuestions", status ? status.open_questions : [], "なし");
+  renderMeetingTransitions(room);
+}
+
+function renderMeetingTransitions(room) {
+  const target = $("meetingTransitions");
+  const history = meetingStatusHistory(room);
+  if (!history.length) {
+    target.innerHTML = `<div class="transitionEmpty">保留</div>`;
+    return;
+  }
+  const currentIndex = history.length - 1;
+  const path = history
+    .map((entry, index) => {
+      const label = phaseLabel(entry.phase);
+      return index === currentIndex ? `&lt;&lt; ${escapeHtml(label)} &gt;&gt;` : escapeHtml(label);
+    })
+    .join(`<span class="transitionArrow"> &gt;&gt; </span>`);
+  const items = history
+    .map(
+      (entry, index) => `
+        <li class="${index === currentIndex ? "currentTransition" : ""}">
+          <div>
+            <strong>${escapeHtml(phaseLabel(entry.phase))}</strong>
+            <time datetime="${escapeHtml(entry.updated_at || "")}">${escapeHtml(entry.updated_at ? formatTime(entry.updated_at) : "")}</time>
+          </div>
+          <p>${escapeHtml(localizeText(entry.summary || "要約なし"))}</p>
+          ${entry.topic ? `<small>${escapeHtml(localizeText(entry.topic))}</small>` : ""}
+        </li>
+      `,
+    )
+    .join("");
+  target.innerHTML = `
+    <div class="transitionPath">${path}</div>
+    <ol class="transitionHistory">${items}</ol>
+  `;
+}
+
+function meetingStatusHistory(room) {
+  if (!room) return [];
+  const history = [];
+  const seen = new Set();
+  state.events
+    .filter((event) => event.type === "room.status_updated" && event.payload)
+    .forEach((event) => addStatusHistoryEntry(history, seen, event.payload, event.created_at));
+  if (room.meeting_status) {
+    addStatusHistoryEntry(
+      history,
+      seen,
+      room.meeting_status,
+      room.meeting_status.updated_at || room.created_at,
+    );
+  }
+  return history.slice(-8);
+}
+
+function addStatusHistoryEntry(history, seen, status, createdAt) {
+  const entry = {
+    phase: status.phase,
+    topic: status.topic,
+    summary: status.summary,
+    next: status.next,
+    updated_at: status.updated_at || createdAt,
+  };
+  const key = statusSignature(entry);
+  if (seen.has(key)) return;
+  seen.add(key);
+  history.push(entry);
+}
+
+function trackStatusEvent(room) {
+  if (!room || !room.meeting_status) return;
+  const status = room.meeting_status;
+  const event = {
+    id: `local-${status.updated_at || Date.now()}`,
+    room_id: room.id,
+    type: "room.status_updated",
+    actor_id: "controller",
+    target_id: room.id,
+    reason: null,
+    payload: { ...status },
+    created_at: status.updated_at || new Date().toISOString(),
+  };
+  const key = statusSignature(event.payload);
+  const exists = state.events.some(
+    (item) => item.type === "room.status_updated" && item.payload && statusSignature(item.payload) === key,
+  );
+  if (!exists) state.events.push(event);
+}
+
+function statusSignature(status) {
+  return [
+    status.phase || "",
+    status.topic || "",
+    status.summary || "",
+    status.next || "",
+    status.updated_at || "",
+  ].join("\n");
 }
 
 function renderStatusList(targetId, items, emptyText) {
@@ -412,12 +616,12 @@ function renderStatusList(targetId, items, emptyText) {
     return;
   }
   list.classList.remove("emptyList");
-  list.innerHTML = items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  list.innerHTML = items.map((item) => `<li>${escapeHtml(localizeText(item))}</li>`).join("");
 }
 
 function renderProgressStrip(room) {
   if (!room) {
-    $("progressStrip").textContent = "Progress";
+    $("progressStrip").textContent = "進捗";
     return;
   }
   const status = room.meeting_status;
@@ -425,16 +629,16 @@ function renderProgressStrip(room) {
   const activeCount = agents.filter((agent) => ["starting", "active", "speaking", "idle"].includes(agent.state)).length;
   const doneCount = agents.filter((agent) => agent.state === "done").length;
   const mutedCount = room.muted_agent_ids ? room.muted_agent_ids.length : 0;
-  const discussion = room.agent_posting_closed ? "Quiet" : "Open";
+  const discussion = room.agent_posting_closed ? "静か" : "公開";
   const parts = [
-    `${stateLabel(room.state)} / ${status ? status.phase : "Status"}`,
-    `Agents ${agents.length}`,
-    `Active ${activeCount}`,
-    `Done ${doneCount}`,
+    `${stateLabel(room.state)} / ${status ? phaseLabel(status.phase) : "状態"}`,
+    `Agent ${agents.length}`,
+    `稼働 ${activeCount}`,
+    `完了 ${doneCount}`,
     discussion,
   ];
-  if (mutedCount) parts.push(`Muted ${mutedCount}`);
-  if (status && status.next) parts.push(`Next: ${status.next}`);
+  if (mutedCount) parts.push(`ミュート ${mutedCount}`);
+  if (status && status.next) parts.push(`Next: ${localizeText(status.next)}`);
   $("progressStrip").textContent = parts.join(" · ");
 }
 
@@ -541,17 +745,17 @@ function renderPills() {
   const activeCount = agents.filter((agent) => ["starting", "active", "speaking", "idle"].includes(agent.state)).length;
   const doneCount = agents.filter((agent) => agent.state === "done").length;
   $("roomStatusPill").textContent = room
-    ? `${stateLabel(room.state)}${room.agent_posting_closed ? " · Quiet" : ""}`
-    : "No room";
-  $("agentCountPill").textContent = `Agents ${agents.length} / Active ${activeCount} / Done ${doneCount}`;
-  $("activeAgentCount").textContent = `${activeCount} active`;
+    ? `${stateLabel(room.state)}${room.agent_posting_closed ? " · 静か" : ""}`
+    : "Roomなし";
+  $("agentCountPill").textContent = `Agent ${agents.length} / 稼働 ${activeCount} / 完了 ${doneCount}`;
+  $("activeAgentCount").textContent = `稼働 ${activeCount}`;
   $("socketStatusPill").textContent = socketLabel();
 }
 
 function renderTmux() {
   $("tmuxHelp").textContent = state.tmux && state.tmux.inside_tmux
     ? `${state.tmux.attach_command} | window: ${state.tmux.window}`
-    : "start inside tmux";
+    : "tmux内で起動";
 }
 
 function renderStatus() {
@@ -564,7 +768,7 @@ function renderStatus() {
 function renderAgents(agents) {
   const layer = $("agentLayer");
   if (!agents.length) {
-    layer.innerHTML = `<div class="emptySeat">No agents</div>`;
+    layer.innerHTML = `<div class="emptySeat">Agentなし</div>`;
     return;
   }
   const radius = agents.length > 8 ? 39 : 42;
@@ -582,14 +786,14 @@ function renderAgents(agents) {
       return `
         <div class="seat state-${agentState} ${agents.length > 8 ? "compactSeat" : ""} ${bubbleClass}"
           style="--seat-x:${x}%;--seat-y:${y}%;--accent:${safeColor(agent.accent)}"
-          aria-label="${escapeHtml(`${agent.name} ${agent.state}`)}">
+          aria-label="${escapeHtml(`${displayName(agent.name)} ${stateLabel(agent.state)}`)}">
           <div class="avatar">
-            <img src="${escapeHtml(agent.avatar_url)}" alt="${escapeHtml(agent.name)}" />
+            <img src="${escapeHtml(agent.avatar_url)}" alt="${escapeHtml(displayName(agent.name))}" />
             <span class="stateDot" aria-hidden="true"></span>
             <span class="moodGlyph mood-${signal.key}" title="${escapeHtml(signal.label)}" aria-label="${escapeHtml(signal.label)}">${escapeHtml(signal.glyph)}</span>
           </div>
           <div class="seatName">${escapeHtml(label)}</div>
-          <div class="seatRole">${escapeHtml(agent.role)}</div>
+          <div class="seatRole">${escapeHtml(roleLabel(agent.role))}</div>
           ${bubble ? `<div class="bubble">${escapeHtml(previewText(bubble.text, 180))}</div>` : ""}
         </div>
       `;
@@ -600,7 +804,7 @@ function renderAgents(agents) {
 function renderRoster(agents) {
   const roster = $("agentRoster");
   if (!agents.length) {
-    roster.innerHTML = `<div class="emptyState">No agents</div>`;
+    roster.innerHTML = `<div class="emptyState">Agentなし</div>`;
     return;
   }
   roster.innerHTML = agents
@@ -611,13 +815,13 @@ function renderRoster(agents) {
         <article class="rosterItem state-${agentStateClass(agent.state)}" style="--accent:${safeColor(agent.accent)}">
           <img src="${escapeHtml(agent.avatar_url)}" alt="" />
           <div>
-            <strong>${escapeHtml(agent.name)}</strong>
-            <span>${escapeHtml(agent.role)}</span>
+            <strong>${escapeHtml(displayName(agent.name))}</strong>
+            <span>${escapeHtml(roleLabel(agent.role))}</span>
             <small>${escapeHtml(agent.pane_id || agent.id)}</small>
           </div>
           <div class="rosterState">
             <span class="moodBadge mood-${signal.key}" title="${escapeHtml(signal.label)}" aria-label="${escapeHtml(signal.label)}">${escapeHtml(signal.glyph)}</span>
-            ${isMuted(agent) ? `<span class="stateBadge mutedBadge">Muted</span>` : ""}
+            ${isMuted(agent) ? `<span class="stateBadge mutedBadge">ミュート</span>` : ""}
             <span class="stateBadge">${escapeHtml(stateLabel(agent.state))}</span>
           </div>
         </article>
@@ -643,16 +847,17 @@ function messageArticle(message, agents, isPrivate) {
   const agent = agents.get(message.actor_id);
   const accent = safeColor(agent ? agent.accent : actorAccent(message.actor_type));
   const tag = message.kind && message.kind !== "message" ? message.kind : message.actor_type;
+  const actorName = agent ? displayName(agent.name) : displayName(message.actor_name);
   return `
     <article class="message ${messageClass(message)} ${isPrivate ? "privateMessage" : ""}" style="--accent:${accent}">
       ${messageAvatar(message, agent, accent)}
       <div class="messageBody">
         <div class="messageMeta">
-          <strong>${escapeHtml(message.actor_name)}</strong>
+          <strong>${escapeHtml(actorName)}</strong>
           <span><time datetime="${escapeHtml(message.created_at)}">${escapeHtml(formatTime(message.created_at))}</time> · #${message.id}</span>
         </div>
-        <div class="messageTag">${escapeHtml(tag)}</div>
-        <div class="messageText">${escapeHtml(message.text)}</div>
+        <div class="messageTag">${escapeHtml(messageTagLabel(tag))}</div>
+        <div class="messageText">${escapeHtml(localizeText(message.text))}</div>
       </div>
     </article>
   `;
@@ -666,7 +871,7 @@ function messageAvatar(message, agent, accent) {
       </div>
     `;
   }
-  return `<div class="messageAvatar initialsAvatar" style="--accent:${accent}">${escapeHtml(initials(message.actor_name))}</div>`;
+  return `<div class="messageAvatar initialsAvatar" style="--accent:${accent}">${escapeHtml(initials(displayName(message.actor_name)))}</div>`;
 }
 
 function showBubble(message) {
@@ -755,13 +960,14 @@ function agentMap() {
 
 function seatLabel(agent, agents) {
   const duplicates = agents.filter((item) => item.template_id === agent.template_id);
-  if (duplicates.length < 2) return agent.short_name;
-  return `${agent.short_name} ${agent.id.slice(-3)}`;
+  const label = displayName(agent.short_name);
+  if (duplicates.length < 2) return label;
+  return `${label} ${agent.id.slice(-3)}`;
 }
 
 function agentSignal(agent) {
   const message = latestAgentMessage(agent.id);
-  if (!message) return { key: "quiet", glyph: "-", label: "No signal yet" };
+  if (!message) return { key: "quiet", glyph: "-", label: "発言なし" };
   const text = message.text.toLowerCase();
   if (
     includesAny(text, [
@@ -779,7 +985,7 @@ function agentSignal(agent) {
       "however",
     ])
   ) {
-    return { key: "challenge", glyph: "!", label: "Challenging" };
+    return { key: "challenge", glyph: "!", label: "反論" };
   }
   if (
     includesAny(text, [
@@ -797,7 +1003,7 @@ function agentSignal(agent) {
       "explore",
     ])
   ) {
-    return { key: "curious", glyph: "?", label: "Exploring" };
+    return { key: "curious", glyph: "?", label: "探索" };
   }
   if (
     includesAny(text, [
@@ -814,9 +1020,9 @@ function agentSignal(agent) {
       "settled",
     ])
   ) {
-    return { key: "confident", glyph: "+", label: "Confident" };
+    return { key: "confident", glyph: "+", label: "確信" };
   }
-  return { key: "steady", glyph: "=", label: "Steady" };
+  return { key: "steady", glyph: "=", label: "安定" };
 }
 
 function latestAgentMessage(agentId) {
@@ -846,7 +1052,39 @@ function actorAccent(actorType) {
 }
 
 function stateLabel(value) {
-  return String(value).replace(/^./, (letter) => letter.toUpperCase());
+  const key = String(value || "").trim();
+  return STATE_LABELS[key] || key.replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function phaseLabel(value) {
+  const key = String(value || "").trim();
+  const normalized = key.toLowerCase();
+  return PHASE_LABELS[key] || PHASE_LABELS[normalized] || displayName(key);
+}
+
+function roleLabel(value) {
+  const key = String(value || "").trim();
+  return ROLE_LABELS[key] || displayName(key);
+}
+
+function messageTagLabel(value) {
+  const key = String(value || "").trim();
+  return MESSAGE_TAG_LABELS[key] || displayName(key);
+}
+
+function displayName(value) {
+  const text = String(value || "").trim();
+  return ACTOR_LABELS[text] || text;
+}
+
+function localizeText(value) {
+  let text = String(value || "");
+  Object.entries(ACTOR_LABELS)
+    .sort((left, right) => right[0].length - left[0].length)
+    .forEach(([source, label]) => {
+      text = text.replaceAll(source, label);
+    });
+  return text;
 }
 
 function agentStateClass(value) {
@@ -855,10 +1093,10 @@ function agentStateClass(value) {
 }
 
 function socketLabel() {
-  if (!state.ws) return "Socket off";
-  if (state.ws.readyState === WebSocket.OPEN) return "Socket on";
-  if (state.ws.readyState === WebSocket.CONNECTING) return "Socket connecting";
-  return "Socket off";
+  if (!state.ws) return "Socketなし";
+  if (state.ws.readyState === WebSocket.OPEN) return "Socket接続";
+  if (state.ws.readyState === WebSocket.CONNECTING) return "Socket接続中";
+  return "Socketなし";
 }
 
 function initials(name) {
