@@ -81,7 +81,7 @@ Track these fields:
 - raw ideas
 - grouped idea clusters
 - shortlisted ideas
-- deep-dive notes per idea
+- deep-dive candidate sheets per shortlisted idea
 - evaluation axes and scores or qualitative ratings
 - consensus gate for each phase
 - objections, revisions, blockers, and how each was resolved
@@ -94,7 +94,7 @@ Use these phases in order:
 - `align`: align the goal, today’s decision scope, expected output, and action format.
 - `diverge`: gather many ideas without judging them.
 - `cluster`: group similar ideas and name the main directions.
-- `deepen`: choose 2-3 promising directions and examine purpose, target, effect, feasibility, risk, and first experiment.
+- `deepen`: turn 2-3 promising directions into concrete candidate sheets by tightening target, problem, mechanism, scope, assumptions, failure modes, revisions, and first validation.
 - `evaluate`: compare shortlisted ideas by effect, feasibility, urgency, and cost.
 - `converge`: classify ideas into implement now, research next, and drop for now; prepare a handoff report detailed enough for another agent to start implementation.
 
@@ -120,6 +120,9 @@ Rules:
 - During `diverge`, stop evaluation, feasibility debate, and premature rejection. Say: `今は広げる時間です。判断は後でやります。`
 - During `cluster`, merge variants without judging quality. Preserve odd ideas as separate clusters when their intent differs.
 - During `deepen`, stop broad new-idea generation unless it directly improves a shortlisted idea.
+- During `deepen`, do not move to `evaluate` until each shortlisted idea has a candidate sheet with: target user or operator, problem, concrete mechanism, non-goals, strongest assumption, likely failure mode, smallest useful revision, validation step, expected evidence, and stop condition.
+- During `deepen`, run at least two passes per shortlisted idea: first clarify what the idea actually is, then ask assigned agents to sharpen weak assumptions, edge cases, implementation shape, and validation.
+- During `deepen`, if an agent only says a risk or preference, ask them to convert it into a revision, validation, or explicit blocker.
 - During `evaluate`, make the tradeoff visible. Scores are discussion aids, not automatic decisions.
 - During `converge`, always output `implement now`, `research next`, and `drop for now`.
 - Before finishing, ask: "この結論で失敗するとしたら、何を見落としているか？"
@@ -159,6 +162,31 @@ When reducing ideas or choosing candidates, do not merely pick. Explain the narr
 - what would change the decision later
 
 Ask at least one agent to challenge the narrowing rationale from a temporary viewpoint different from their default lens.
+
+### Deepening Discipline
+
+The goal of `deepen` is not to pick the winner. It is to make each surviving idea precise enough that evaluation is fair.
+
+For each shortlisted idea, maintain a candidate sheet in `meeting-state.md`:
+
+- `誰のため`: target user, operator, or stakeholder.
+- `困りごと`: the concrete problem or friction being solved.
+- `中核の仕組み`: what changes in behavior, UI, process, code, or operation.
+- `範囲外`: what this idea deliberately does not solve.
+- `効く理由`: why this should improve the outcome.
+- `強い前提`: the assumption that would break the idea if false.
+- `壊れ方`: the most likely failure mode or misuse.
+- `修正案`: the smallest change that makes the idea more precise or robust.
+- `検証`: one small test, evidence to look for, and a stop condition.
+
+When assigning agents in `deepen`, give each agent one sharpening job, not a generic opinion request:
+
+- `具体化`: explain the mechanism and user/operator flow.
+- `反証`: name the assumption that must be tested and how it could fail.
+- `実装`: reduce the idea to the smallest buildable unit and verification command.
+- `運用`: define owner, monitoring, recovery, and handoff concerns.
+- `利用者`: describe the moment of confusion or value in plain language.
+- `統合`: update the candidate sheet and preserve unresolved blockers.
 
 ## MCP Tools
 

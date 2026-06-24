@@ -126,7 +126,7 @@ The controller runs the room as a workshop, not open-ended free discussion.
 1. `align`: align the goal, decision scope, expected output, and action format.
 2. `diverge`: collect many ideas without judging them.
 3. `cluster`: group similar ideas and name the main directions.
-4. `deepen`: choose 2-3 promising directions and examine purpose, target, effect, feasibility, risk, and first experiment.
+4. `deepen`: turn 2-3 promising directions into concrete candidate sheets covering target, problem, mechanism, non-goals, assumptions, failure modes, revisions, validation evidence, and stop conditions.
 5. `evaluate`: compare shortlisted ideas by effect, feasibility, urgency, and cost.
 6. `converge`: classify ideas into implement now, research next, and drop for now; prepare an implementation handoff report.
 
@@ -137,6 +137,8 @@ Every phase ends with a consensus gate. The controller posts the current synthes
 The final report should be detailed enough for another agent to start implementation. It includes purpose, background, decisions, requirements, verification viewpoints, risks, and unresolved questions.
 
 When narrowing ideas, the controller must explain the criteria, supporting evidence, selected ideas, dropped or merged ideas, accepted tradeoff, and what would change the decision later.
+
+During `deepen`, agents should improve the precision of shortlisted ideas rather than only add opinions. Each contribution should either clarify the mechanism, expose a testable assumption, propose a concrete revision, or define a small validation step.
 
 ## Shared Context
 

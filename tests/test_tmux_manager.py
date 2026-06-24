@@ -298,6 +298,9 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "Room communication rules:" in controller_prompt
     assert "`宛先: 全体` or `宛先: <相手名>`" in controller_prompt
     assert "Do not post unexplained fragments" in controller_prompt
+    assert "Deepening rules:" in controller_prompt
+    assert "Turn each shortlisted idea into a concrete candidate" in controller_prompt
+    assert "Propose one concrete validation step" in controller_prompt
     assert "room_status_update" in controller_prompt
     assert "planned_agents" in controller_prompt
     assert "room_close_discussion" in controller_prompt
@@ -321,6 +324,9 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "Room communication rules:" in agent_prompt
     assert "`宛先: 全体` or `宛先: <相手名>`" in agent_prompt
     assert "Do not post unexplained fragments" in agent_prompt
+    assert "Deepening rules:" in agent_prompt
+    assert "Turn each shortlisted idea into a concrete candidate" in agent_prompt
+    assert "Propose one concrete validation step" in agent_prompt
     assert "room_status_update" not in agent_prompt
     assert "uv run agent-room room" not in agent_prompt
 
@@ -401,6 +407,8 @@ def test_send_goal_includes_room_communication_rules(tmp_path, monkeypatch) -> N
     assert "Room communication rules:" in prompt
     assert "`宛先: 全体` or `宛先: <相手名>`" in prompt
     assert "Do not post unexplained fragments" in prompt
+    assert "Deepening rules:" in prompt
+    assert "Turn each shortlisted idea into a concrete candidate" in prompt
 
 
 def test_resume_controller_uses_saved_codex_session(tmp_path, monkeypatch) -> None:

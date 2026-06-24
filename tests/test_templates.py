@@ -108,6 +108,23 @@ def test_templates_define_contextual_room_posting() -> None:
             assert "not label-only fragments" in text
 
 
+def test_templates_define_deepening_discipline() -> None:
+    registry = TemplateRegistry(Path.cwd())
+
+    for template in registry.list():
+        agents_md = registry.path_for(template.id) / "AGENTS.md"
+        text = agents_md.read_text(encoding="utf-8")
+        if template.scope == "controller":
+            assert "### Deepening Discipline" in text
+            assert "candidate sheet" in text
+            assert "`強い前提`" in text
+            assert "`検証`" in text
+        else:
+            assert "In the `deepen` phase, help sharpen the assigned shortlisted idea" in text
+            assert "the concrete revision you recommend" in text
+            assert "the smallest validation step" in text
+
+
 def test_teams_reference_regular_agent_templates() -> None:
     registry = TemplateRegistry(Path.cwd())
     team_registry = TeamRegistry(Path.cwd(), registry)

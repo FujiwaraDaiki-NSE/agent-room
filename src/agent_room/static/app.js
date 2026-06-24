@@ -17,7 +17,7 @@ const state = {
 
 const TERMINATION_TEMPLATE = {
   controller:
-    "controllerがalign、diverge、cluster、deepen、evaluate、convergeを順に進め、各phase末尾でaccept/revise/blockの合意ゲートを通し、絞り込み理由と異議処理を記録し、目的、背景、決定、要件、検証観点、リスク、未決事項を含む実装引き継ぎレポートをまとめたら。",
+    "controllerがalign、diverge、cluster、deepen、evaluate、convergeを順に進め、deepenでは候補案ごとに対象、困りごと、中核の仕組み、範囲外、強い前提、壊れ方、修正案、検証を具体化し、各phase末尾でaccept/revise/blockの合意ゲートを通し、絞り込み理由と異議処理を記録し、目的、背景、決定、要件、検証観点、リスク、未決事項を含む実装引き継ぎレポートをまとめたら。",
   agent:
     "controllerが終了と判断するまでdoneしない。各agentはcontrollerから割り当てられた一時観点で、宛先と文脈を示して発言する。phase合意ではaccept/revise/blockのいずれか、判断対象、理由、次に直す点を口語的に返す。開始直後はcontrollerの初回指示を待つ。",
 };

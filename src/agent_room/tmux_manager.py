@@ -127,6 +127,7 @@ class TmuxManager:
             [
                 *self._goal_lines(agent.template_id == "controller", goal, controller_termination, agent_termination),
                 *self._room_communication_lines(),
+                *self._deepening_lines(),
             ]
         )
         self._send_codex_prompt(agent.pane_id, text)
@@ -210,6 +211,7 @@ class TmuxManager:
             "Speak to the meeting only through the Agent Room MCP tools.",
             "Do not call the Agent Room HTTP API or CLI commands directly.",
             *self._room_communication_lines(),
+            *self._deepening_lines(),
         ]
         if template.scope == "controller":
             lines.extend(
@@ -321,6 +323,17 @@ class TmuxManager:
             "- Explain what proposal, phase, or claim you are reacting to, why it matters, and what should change next.",
             "- Use natural conversational Japanese. Concise means no filler, not label-only fragments.",
             "- Do not post unexplained fragments such as only `revise: ...` or a bare checklist of labels.",
+        ]
+
+    def _deepening_lines(self) -> list[str]:
+        return [
+            "",
+            "Deepening rules:",
+            "- In the `deepen` phase, do not add broad new ideas unless they directly improve a shortlisted idea.",
+            "- Turn each shortlisted idea into a concrete candidate: who it is for, what problem it solves, what changes, what stays out of scope, and how it would work.",
+            "- Name the strongest assumption, the easiest way it could fail, and the smallest revision that would make it sharper.",
+            "- Propose one concrete validation step with expected evidence and a stop condition.",
+            "- When critiquing, improve the candidate's precision instead of only listing risks.",
         ]
 
     def _agent_command(self, runtime_dir: Path, prompt_path: Path, can_write: bool) -> str:
