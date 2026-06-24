@@ -88,6 +88,8 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
 
     def fake_request(method, url, payload):
         calls.append((method, url, payload))
+        if method == "GET" and url == "http://server/api/rooms/room-1":
+            return {"planned_template_ids": ["critic", "researcher"]}
         return {"ok": True, "payload": payload}
 
     mcp = create_agent_room_mcp(
@@ -116,7 +118,9 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
                 "next": "Ask final objections",
             },
         )
-        close_result = await client.call_tool("room_close_discussion", {"reason": "final summary"})
+        planned_result = await client.call_tool("planned_agents", {})
+        close_result = await client.call_tool("room_close_discussion", {"reason": "final report"})
+        finish_result = await client.call_tool("room_finish", {"reason": "workshop complete"})
         mute_result = await client.call_tool("agent_mute", {"target_agent_id": "critic-1", "reason": "over limit"})
 
     assert {
@@ -129,16 +133,19 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
         "controller_read",
         "controller_post",
         "agent_deploy",
+        "planned_agents",
         "agent_stop",
         "agent_goal",
         "agent_config",
         "room_status_update",
         "room_close_discussion",
         "room_open_discussion",
+        "room_finish",
         "agent_mute",
         "agent_unmute",
     } == names
     assert schema_by_name["agent_deploy"]["required"] == ["template_id", "count"]
+    assert schema_by_name["planned_agents"].get("required", []) == []
     assert schema_by_name["agent_stop"]["required"] == ["target_agent_id", "reason", "force"]
     assert schema_by_name["room_status_update"]["required"] == [
         "phase",
@@ -149,6 +156,7 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
         "next",
     ]
     assert schema_by_name["room_close_discussion"]["required"] == ["reason"]
+    assert schema_by_name["room_finish"]["required"] == ["reason"]
     assert schema_by_name["agent_mute"]["required"] == ["target_agent_id", "reason"]
     assert result.data["payload"]["actor_type"] == "controller"
     assert status_result.data["payload"] == {
@@ -160,10 +168,14 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
         "open_questions": ["Owner granularity"],
         "next": "Ask final objections",
     }
-    assert close_result.data["payload"] == {"actor_id": "controller-1", "reason": "final summary"}
+    assert planned_result.data == ["critic", "researcher"]
+    assert close_result.data["payload"] == {"actor_id": "controller-1", "reason": "final report"}
+    assert finish_result.data["payload"] == {"actor_id": "controller-1", "reason": "workshop complete"}
     assert mute_result.data["payload"] == {"actor_id": "controller-1", "reason": "over limit"}
-    assert calls[-4][1] == "http://server/api/rooms/room-1/controller/messages"
-    assert calls[-3][0] == "PUT"
-    assert calls[-3][1] == "http://server/api/rooms/room-1/status"
-    assert calls[-2][1] == "http://server/api/rooms/room-1/discussion/close"
+    assert calls[-6][1] == "http://server/api/rooms/room-1/controller/messages"
+    assert calls[-5][0] == "PUT"
+    assert calls[-5][1] == "http://server/api/rooms/room-1/status"
+    assert calls[-4][1] == "http://server/api/rooms/room-1"
+    assert calls[-3][1] == "http://server/api/rooms/room-1/discussion/close"
+    assert calls[-2][1] == "http://server/api/rooms/room-1/done"
     assert calls[-1][1] == "http://server/api/rooms/room-1/agents/critic-1/mute"

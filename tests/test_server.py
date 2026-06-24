@@ -20,6 +20,8 @@ def agent_instance(
     template_id: str,
     state: str,
     pane_id: str | None,
+    runtime_dir: str | None = None,
+    codex_session_id: str | None = None,
 ) -> AgentInstance:
     return AgentInstance(
         id=agent_id,
@@ -33,7 +35,8 @@ def agent_instance(
         avatar_url=f"/api/templates/{template_id}/avatar",
         state=state,  # type: ignore[arg-type]
         pane_id=pane_id,
-        runtime_dir=None,
+        runtime_dir=runtime_dir,
+        codex_session_id=codex_session_id,
     )
 
 
@@ -55,6 +58,7 @@ def test_api_room_without_agents(tmp_path) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     )
 
@@ -64,7 +68,8 @@ def test_api_room_without_agents(tmp_path) -> None:
     assert room["controller_termination"] == "Controller closes the room"
     assert room["agent_termination"] == "Each agent is done"
     assert room["share_contexts"] == []
-    assert room["agent_posting_closed"] is False
+    assert room["planned_template_ids"] == []
+    assert room["agent_posting_closed"] is True
     assert room["muted_agent_ids"] == []
     assert room["state"] == "open"
     assert room["meeting_status"]["phase"] == "Open"
@@ -74,6 +79,27 @@ def test_api_room_without_agents(tmp_path) -> None:
 
     messages = client.get(f"/api/rooms/{room['id']}/messages").json()
     assert messages[0]["kind"] == "goal"
+
+
+def test_api_lists_agent_teams(tmp_path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+
+    response = client.get("/api/teams")
+
+    assert response.status_code == 200
+    teams = response.json()
+    assert teams[0]["id"] == "default"
+    assert teams[0]["templates"] == ["critic", "researcher", "builder", "synthesizer", "facilitator", "operator"]
+    critique_lab = next(team for team in teams if team["id"] == "critique-lab")
+    assert critique_lab["templates"] == [
+        "critique-technical",
+        "critique-user",
+        "critique-business",
+        "critique-risk",
+        "idea-reviser",
+    ]
 
 
 def test_room_opens_after_agent_deploy_finishes(tmp_path, monkeypatch) -> None:
@@ -113,6 +139,7 @@ def test_room_opens_after_agent_deploy_finishes(tmp_path, monkeypatch) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": ["controller"],
+            "teams": [],
         },
     )
 
@@ -122,6 +149,60 @@ def test_room_opens_after_agent_deploy_finishes(tmp_path, monkeypatch) -> None:
     assert room["state"] == "open"
     event_types = [event["type"] for event in client.get(f"/api/rooms/{room['id']}/events").json()]
     assert event_types == ["room.starting", "message.created", "agent.deployed", "room.started"]
+
+
+def test_room_start_stores_planned_team_templates_but_deploys_controller_only(tmp_path, monkeypatch) -> None:
+    deployed = []
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+
+    def fake_deploy(self, room, template, template_dir, actor_id, goal, controller_termination, agent_termination):
+        deployed.append(template.id)
+        return AgentInstance(
+            id=f"{template.id}-fake",
+            room_id=room.id,
+            template_id=template.id,
+            name=template.name,
+            short_name=template.short_name,
+            role=template.role,
+            personality=template.personality,
+            accent=template.accent,
+            avatar_url=f"/api/templates/{template.id}/avatar",
+            state="active",
+            pane_id=f"%{len(deployed)}",
+            runtime_dir=str(tmp_path / "runtime" / template.id),
+            goal=goal,
+            controller_termination=controller_termination if template.scope == "controller" else None,
+            agent_termination=agent_termination,
+        )
+
+    monkeypatch.setattr(TmuxManager, "deploy", fake_deploy)
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+
+    response = client.post(
+        "/api/rooms",
+        json={
+            "name": "Design",
+            "goal": "Discuss architecture",
+            "controller_termination": "Controller closes the room",
+            "agent_termination": "Each agent is done",
+            "share_contexts": [],
+            "templates": ["controller"],
+            "teams": ["critique-lab"],
+        },
+    )
+
+    assert response.status_code == 200
+    room = response.json()
+    assert deployed == ["controller"]
+    assert room["planned_template_ids"] == [
+        "critique-technical",
+        "critique-user",
+        "critique-business",
+        "critique-risk",
+        "idea-reviser",
+    ]
+    assert [agent["template_id"] for agent in room["agents"]] == ["controller"]
 
 
 def test_share_contexts_list_direct_share_directories(tmp_path) -> None:
@@ -158,6 +239,7 @@ def test_room_stores_selected_share_contexts(tmp_path) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": ["alpha"],
             "templates": [],
+            "teams": [],
         },
     )
 
@@ -181,6 +263,7 @@ def test_room_rejects_unknown_share_context(tmp_path) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": ["missing"],
             "templates": [],
+            "teams": [],
         },
     )
 
@@ -230,6 +313,7 @@ def test_controller_updates_meeting_status(tmp_path) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
     write_room_agents(
@@ -280,6 +364,7 @@ def test_regular_agent_cannot_update_meeting_status(tmp_path) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
     write_room_agents(tmp_path, room["id"], [agent_instance("critic-1", "critic", "active", "%2")])
@@ -333,6 +418,86 @@ def test_controller_private_message_notifies_controller_pane(tmp_path, monkeypat
     assert calls == [("controller-1", "%1", "Check privately")]
 
 
+def test_controller_private_message_resumes_stopped_controller(tmp_path, monkeypatch) -> None:
+    calls = []
+
+    def fake_resume(_manager, agent, text):
+        calls.append((agent.id, agent.pane_id, text))
+        return "%9", "11111111-2222-3333-4444-555555555555"
+
+    monkeypatch.setattr(TmuxManager, "resume_controller", fake_resume)
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+    room = client.get("/api/rooms").json()[0]
+    write_room_agents(
+        tmp_path,
+        room["id"],
+        [agent_instance("controller-1", "controller", "stopped", None, str(tmp_path / "runtime" / "controller"))],
+    )
+
+    response = client.post(
+        f"/api/rooms/{room['id']}/controller/messages",
+        json={
+            "actor_type": "user",
+            "actor_id": "user",
+            "actor_name": "User",
+            "text": "Follow up",
+            "kind": "message",
+        },
+    )
+
+    assert response.status_code == 200
+    assert calls == [("controller-1", None, "Follow up")]
+    updated = client.get(f"/api/rooms/{room['id']}").json()
+    controller = updated["agents"][0]
+    assert controller["state"] == "active"
+    assert controller["pane_id"] == "%9"
+    assert controller["codex_session_id"] == "11111111-2222-3333-4444-555555555555"
+    private_messages = client.get(f"/api/rooms/{room['id']}/controller/messages").json()
+    assert [message["text"] for message in private_messages] == [
+        "Follow up",
+        "Controller resumed for private message.",
+    ]
+
+
+def test_controller_private_message_resumes_timestamped_codex_session(tmp_path, monkeypatch) -> None:
+    session_id = "019ef3e4-eb46-7841-ba70-659fbfb3bbce"
+    runtime_dir = tmp_path / "runtime" / "controller"
+    sessions_dir = runtime_dir / ".codex" / "sessions" / "2026" / "06" / "23"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / f"rollout-2026-06-23T18-52-06-{session_id}.jsonl").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("TMUX_PANE", "%0")
+    monkeypatch.setattr(TmuxManager, "_split_pane", lambda _manager, _command: "%9")
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+    room = client.get("/api/rooms").json()[0]
+    write_room_agents(
+        tmp_path,
+        room["id"],
+        [agent_instance("controller-1", "controller", "stopped", None, str(runtime_dir))],
+    )
+
+    response = client.post(
+        f"/api/rooms/{room['id']}/controller/messages",
+        json={
+            "actor_type": "user",
+            "actor_id": "user",
+            "actor_name": "User",
+            "text": "Follow up",
+            "kind": "message",
+        },
+    )
+
+    assert response.status_code == 200
+    updated = client.get(f"/api/rooms/{room['id']}").json()
+    controller = updated["agents"][0]
+    assert controller["state"] == "active"
+    assert controller["pane_id"] == "%9"
+    assert controller["codex_session_id"] == session_id
+
+
 def test_closed_discussion_blocks_regular_agent_posts_but_allows_controller_and_user(tmp_path) -> None:
     auth_file = tmp_path / "auth.json"
     auth_file.write_text("{}", encoding="utf-8")
@@ -346,6 +511,7 @@ def test_closed_discussion_blocks_regular_agent_posts_but_allows_controller_and_
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
     write_room_agents(
@@ -359,7 +525,7 @@ def test_closed_discussion_blocks_regular_agent_posts_but_allows_controller_and_
 
     close_response = client.post(
         f"/api/rooms/{room['id']}/discussion/close",
-        json={"actor_id": "controller-1", "reason": "final summary"},
+        json={"actor_id": "controller-1", "reason": "final report"},
     )
     assert close_response.status_code == 200
     assert close_response.json()["agent_posting_closed"] is True
@@ -415,6 +581,7 @@ def test_agent_mute_blocks_only_target_agent(tmp_path) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
     write_room_agents(
@@ -426,6 +593,11 @@ def test_agent_mute_blocks_only_target_agent(tmp_path) -> None:
             agent_instance("builder-1", "builder", "active", "%3"),
         ],
     )
+    open_response = client.post(
+        f"/api/rooms/{room['id']}/discussion/open",
+        json={"actor_id": "controller-1", "reason": "start contributions"},
+    )
+    assert open_response.status_code == 200
 
     mute_response = client.post(
         f"/api/rooms/{room['id']}/agents/critic-1/mute",
@@ -499,7 +671,7 @@ def test_controller_cannot_be_muted(tmp_path) -> None:
     assert "controller cannot be muted" in response.json()["detail"]
 
 
-def test_room_done_stops_agent_panes_but_keeps_controller_pane(tmp_path, monkeypatch) -> None:
+def test_room_done_closes_all_agent_panes(tmp_path, monkeypatch) -> None:
     stopped = []
 
     def fake_stop(_manager, agent, force) -> None:
@@ -518,6 +690,7 @@ def test_room_done_stops_agent_panes_but_keeps_controller_pane(tmp_path, monkeyp
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
     write_room_agents(
@@ -536,15 +709,85 @@ def test_room_done_stops_agent_panes_but_keeps_controller_pane(tmp_path, monkeyp
     )
 
     assert response.status_code == 200
-    assert stopped == [("critic-1", "%2", False), ("builder-1", "%3", False)]
+    assert stopped == [("controller-1", "%1", False), ("critic-1", "%2", False), ("builder-1", "%3", False)]
     updated = response.json()
     assert updated["state"] == "done"
     panes = {agent["id"]: agent["pane_id"] for agent in updated["agents"]}
     states = {agent["id"]: agent["state"] for agent in updated["agents"]}
-    assert panes == {"controller-1": "%1", "critic-1": None, "builder-1": None}
-    assert states["controller-1"] == "active"
+    assert panes == {"controller-1": None, "critic-1": None, "builder-1": None}
+    assert states["controller-1"] == "stopped"
     assert states["critic-1"] == "stopped"
     assert states["builder-1"] == "stopped"
+
+
+def test_controller_private_message_resumes_after_room_done(tmp_path, monkeypatch) -> None:
+    stopped = []
+    resumed = []
+
+    def fake_stop(_manager, agent, force) -> None:
+        stopped.append((agent.id, agent.pane_id, force))
+
+    def fake_resume(_manager, agent, text):
+        resumed.append((agent.id, agent.pane_id, text))
+        return "%9", "11111111-2222-3333-4444-555555555555"
+
+    monkeypatch.setattr(TmuxManager, "stop", fake_stop)
+    monkeypatch.setattr(TmuxManager, "resume_controller", fake_resume)
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+    room = client.post(
+        "/api/rooms",
+        json={
+            "name": "Design",
+            "goal": "Discuss architecture",
+            "controller_termination": "Controller closes the room",
+            "agent_termination": "Each agent is done",
+            "share_contexts": [],
+            "templates": [],
+            "teams": [],
+        },
+    ).json()
+    write_room_agents(
+        tmp_path,
+        room["id"],
+        [
+            agent_instance(
+                "controller-1",
+                "controller",
+                "active",
+                "%1",
+                str(tmp_path / "runtime" / "controller"),
+            ),
+            agent_instance("critic-1", "critic", "active", "%2"),
+        ],
+    )
+
+    done_response = client.post(
+        f"/api/rooms/{room['id']}/done",
+        json={"actor_id": "controller-1", "reason": "workshop complete"},
+    )
+    response = client.post(
+        f"/api/rooms/{room['id']}/controller/messages",
+        json={
+            "actor_type": "user",
+            "actor_id": "user",
+            "actor_name": "User",
+            "text": "Follow up after done",
+            "kind": "message",
+        },
+    )
+
+    assert done_response.status_code == 200
+    assert stopped == [("controller-1", "%1", False), ("critic-1", "%2", False)]
+    assert response.status_code == 200
+    assert resumed == [("controller-1", None, "Follow up after done")]
+    updated = client.get(f"/api/rooms/{room['id']}").json()
+    controller = next(agent for agent in updated["agents"] if agent["id"] == "controller-1")
+    assert updated["state"] == "done"
+    assert controller["state"] == "active"
+    assert controller["pane_id"] == "%9"
+    assert controller["codex_session_id"] == "11111111-2222-3333-4444-555555555555"
 
 
 def test_room_stop_closes_all_panes_even_when_agents_are_done(tmp_path, monkeypatch) -> None:
@@ -566,6 +809,7 @@ def test_room_stop_closes_all_panes_even_when_agents_are_done(tmp_path, monkeypa
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
     write_room_agents(
@@ -604,6 +848,7 @@ def test_deploy_requires_tmux(tmp_path, monkeypatch) -> None:
             "agent_termination": "Each agent is done",
             "share_contexts": [],
             "templates": [],
+            "teams": [],
         },
     ).json()
 

@@ -18,7 +18,7 @@ from .models import (
     UpdateMeetingStatusRequest,
 )
 from .store import Store
-from .templates import TemplateError, TemplateRegistry
+from .templates import TeamRegistry, TemplateError, TemplateRegistry
 from .tmux_manager import TmuxError, TmuxManager
 
 
@@ -42,8 +42,15 @@ class Hub:
             await websocket.send_json(payload)
 
 
+class ControllerNotifyResult:
+    def __init__(self, notice: Any | None = None, room: Any | None = None) -> None:
+        self.notice = notice
+        self.room = room
+
+
 def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> FastAPI:
     registry = TemplateRegistry(project_root)
+    team_registry = TeamRegistry(project_root, registry)
     store = Store(data_dir)
     tmux = TmuxManager(project_root, data_dir, codex_auth_file)
     share_root = project_root / "share"
@@ -71,6 +78,13 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
         except TemplateError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+    @app.get("/api/teams")
+    def list_teams() -> list[dict[str, Any]]:
+        try:
+            return [team.model_dump() for team in team_registry.list()]
+        except TemplateError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     @app.get("/api/templates/{template_id}/avatar")
     def avatar(template_id: str) -> FileResponse:
         try:
@@ -95,19 +109,22 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             current = store.current_room()
             _stop_room_panes(current.id, "user", "room restart", False, False)
             share_contexts = _validate_share_contexts(request.share_contexts)
+            selected_template_ids = _selected_template_ids(request.templates, request.teams)
+            planned_template_ids = _planned_template_ids(selected_template_ids)
             room = store.create_room(
                 request.name,
                 request.goal,
                 request.controller_termination,
                 request.agent_termination,
                 share_contexts,
+                planned_template_ids,
                 "starting",
             )
             store.add_message(room.id, "user", "user", "User", request.goal, "goal")
             try:
-                for template_id in request.templates:
+                for template_id in _initial_template_ids(selected_template_ids):
                     await _deploy(room.id, template_id, 1, "user")
-                room = store.set_room_state(room.id, "open", "system", "agents deployed")
+                room = store.set_room_state(room.id, "open", "system", "controller deployed")
             except (ValueError, TemplateError, TmuxError, KeyError) as exc:
                 store.set_room_state(room.id, "stopped", "system", str(exc))
                 raise
@@ -177,11 +194,15 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
                 request.text,
             )
             extra_messages = []
+            updated_room = None
             if request.actor_type == "user":
-                notice = _notify_controller_whisper(room_id, request.text)
-                if notice:
-                    extra_messages.append(notice)
+                result = _notify_controller_whisper(room_id, request.text)
+                if result.notice:
+                    extra_messages.append(result.notice)
+                updated_room = result.room
             await hub.broadcast(room_id, {"type": "controller.message.created", "controller_message": message.model_dump()})
+            if updated_room:
+                await hub.broadcast(room_id, {"type": "agent.resumed", "room": updated_room.model_dump()})
             for extra_message in extra_messages:
                 await hub.broadcast(
                     room_id,
@@ -359,7 +380,7 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
     @app.post("/api/rooms/{room_id}/done")
     async def mark_room_done(room_id: str, request: MarkDoneRequest) -> dict[str, Any]:
         try:
-            _stop_room_panes(room_id, request.actor_id, request.reason, False, True)
+            _stop_room_panes(room_id, request.actor_id, request.reason, False, False)
             room = store.set_room_state(room_id, "done", request.actor_id, request.reason)
             await hub.broadcast(room_id, {"type": "room.done", "room": room.model_dump()})
             return room.model_dump()
@@ -406,34 +427,76 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             room = store.add_agent(room_id, agent, actor_id)
         return room
 
-    def _notify_controller_whisper(room_id: str, text: str) -> Any | None:
+    def _selected_template_ids(template_ids: list[str], team_ids: list[str]) -> list[str]:
+        selected = []
+        for template_id in template_ids:
+            selected.append(template_id)
+        for team_id in team_ids:
+            selected.extend(team_registry.get(team_id).templates)
+        return list(dict.fromkeys(selected))
+
+    def _initial_template_ids(template_ids: list[str]) -> list[str]:
+        return [template_id for template_id in template_ids if registry.get(template_id).scope == "controller"]
+
+    def _planned_template_ids(template_ids: list[str]) -> list[str]:
+        return [template_id for template_id in template_ids if registry.get(template_id).scope == "agent"]
+
+    def _notify_controller_whisper(room_id: str, text: str) -> ControllerNotifyResult:
         room = store.get_room(room_id)
         controller = next(
-            (agent for agent in room.agents if agent.template_id == "controller" and agent.pane_id),
+            (agent for agent in room.agents if agent.template_id == "controller"),
             None,
         )
         if not controller:
-            return store.add_controller_message(
+            return ControllerNotifyResult(
+                store.add_controller_message(
+                    room_id,
+                    "system",
+                    "system",
+                    "System",
+                    "Controller unavailable. The whisper was saved, but no controller agent exists.",
+                )
+            )
+        if controller.pane_id and not tmux.has_agent_exited(controller):
+            try:
+                tmux.send_controller_whisper(controller, text)
+                return ControllerNotifyResult()
+            except TmuxError:
+                pass
+        try:
+            pane_id, session_id = tmux.resume_controller(controller, text)
+        except TmuxError as exc:
+            return ControllerNotifyResult(store.add_controller_message(room_id, "system", "system", "System", str(exc)))
+        updated = store.update_agent(
+            room_id,
+            controller.id,
+            {
+                "state": "active",
+                "pane_id": pane_id,
+                "codex_session_id": session_id,
+                "reason": "controller resumed for private message",
+            },
+            "system",
+            "agent.resumed",
+        )
+        return ControllerNotifyResult(
+            store.add_controller_message(
                 room_id,
                 "system",
                 "system",
                 "System",
-                "Controller pane unavailable. The whisper was saved, but no running controller pane received it.",
-            )
-        try:
-            tmux.send_controller_whisper(controller, text)
-        except TmuxError as exc:
-            return store.add_controller_message(room_id, "system", "system", "System", str(exc))
-        return None
+                "Controller resumed for private message.",
+            ),
+            updated,
+        )
 
     def _stop_room_panes(room_id: str, actor_id: str, reason: str, force: bool, keep_controller: bool) -> None:
         room = store.get_room(room_id)
         for agent in room.agents:
             if keep_controller and agent.template_id == "controller":
                 continue
-            if not agent.pane_id:
-                continue
-            tmux.stop(agent, force)
+            if agent.pane_id:
+                tmux.stop(agent, force)
             store.update_agent(
                 room_id,
                 agent.id,

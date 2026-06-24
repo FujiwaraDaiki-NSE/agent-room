@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .models import AgentTemplate
+from .models import AgentTeam, AgentTemplate
 
 
 class TemplateError(RuntimeError):
@@ -64,3 +64,34 @@ class TemplateRegistry:
         if not codex_config.is_file():
             raise TemplateError(f".codex/config.toml missing: {path}")
         return template
+
+
+class TeamRegistry:
+    def __init__(self, project_root: Path, template_registry: TemplateRegistry) -> None:
+        self.project_root = project_root
+        self.teams_dir = project_root / "agent-teams"
+        self.template_registry = template_registry
+
+    def list(self) -> list[AgentTeam]:
+        teams: list[AgentTeam] = []
+        for path in sorted(self.teams_dir.iterdir()):
+            if path.is_dir():
+                teams.append(self._load(path))
+        return sorted(teams, key=lambda team: (team.id != "default", team.name))
+
+    def get(self, team_id: str) -> AgentTeam:
+        for team in self.list():
+            if team.id == team_id:
+                return team
+        raise TemplateError(f"team not found: {team_id}")
+
+    def _load(self, path: Path) -> AgentTeam:
+        manifest = path / "team.json"
+        if not manifest.is_file():
+            raise TemplateError(f"team.json missing: {path}")
+        team = AgentTeam.model_validate(json.loads(manifest.read_text(encoding="utf-8")))
+        for template_id in team.templates:
+            template = self.template_registry.get(template_id)
+            if template.scope != "agent":
+                raise TemplateError(f"team cannot include controller template: {team.id}")
+        return team

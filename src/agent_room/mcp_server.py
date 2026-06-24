@@ -29,7 +29,10 @@ def create_agent_room_mcp(
         "and mark yourself done only when your assigned termination condition is met."
     )
     if is_controller:
-        instructions += " Controller tools can manage agents, meeting status, and private user-side whispers."
+        instructions += (
+            " Controller tools can manage agents, meeting status, and private user-side whispers. "
+            "Use room_finish, not room_done, to finish the room."
+        )
     mcp = FastMCP(name="Agent Room", instructions=instructions)
     call = request_fn
     base_url = server_url.rstrip("/")
@@ -108,7 +111,8 @@ def create_agent_room_mcp(
         """Mark this agent as done.
 
         This tool updates this agent's state. Use it only when your assigned
-        termination condition is satisfied.
+        termination condition is satisfied. Controllers should use room_finish,
+        not this tool, to finish the room.
 
         Args:
             reason: Short reason why this agent is done.
@@ -244,6 +248,20 @@ def create_agent_room_mcp(
             return call("POST", url(f"/api/rooms/{room_id}/agents"), payload)
 
         @mcp.tool
+        def planned_agents() -> list[str]:
+            """List planned regular agent template ids.
+
+            These are the regular agents selected when the room was started.
+            Deploy them with agent_deploy only when their temporary viewpoint
+            is needed for the current workshop phase.
+
+            Returns:
+                Planned regular agent template ids.
+            """
+            room = call("GET", url(f"/api/rooms/{room_id}"), None)
+            return list(room["planned_template_ids"])
+
+        @mcp.tool
         def agent_stop(target_agent_id: str, reason: str, force: bool) -> dict[str, Any]:
             """Stop an agent pane.
 
@@ -329,7 +347,7 @@ def create_agent_room_mcp(
             """Update the user-visible meeting status.
 
             Use this before phase changes, after each round, and before the
-            final controller summary so the user can see where the meeting is.
+            final controller report so the user can see where the meeting is.
 
             Args:
                 phase: Current meeting phase.
@@ -359,7 +377,7 @@ def create_agent_room_mcp(
 
             After this tool is used, regular agents cannot post public messages.
             The controller and user can still post, so use this before a final
-            controller summary or when the user asks to end the discussion.
+            controller report or when the user asks to end the discussion.
 
             Args:
                 reason: Short reason for closing discussion.
@@ -382,6 +400,24 @@ def create_agent_room_mcp(
             """
             payload = {"actor_id": agent_id, "reason": reason}
             return call("POST", url(f"/api/rooms/{room_id}/discussion/open"), payload)
+
+        @mcp.tool
+        def room_finish(reason: str) -> dict[str, Any]:
+            """Finish the room and close all agent panes.
+
+            Use this after the controller final report when the workshop
+            outcome is complete. This marks the room done and closes every
+            Codex agent pane, including the controller pane. A later private
+            controller message can resume the controller session.
+
+            Args:
+                reason: Short reason why the workshop is complete.
+
+            Returns:
+                The updated room state.
+            """
+            payload = {"actor_id": agent_id, "reason": reason}
+            return call("POST", url(f"/api/rooms/{room_id}/done"), payload)
 
         @mcp.tool
         def agent_mute(target_agent_id: str, reason: str) -> dict[str, Any]:

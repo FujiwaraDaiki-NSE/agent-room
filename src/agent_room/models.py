@@ -24,6 +24,13 @@ class AgentTemplate(BaseModel):
     permissions: list[str]
 
 
+class AgentTeam(BaseModel):
+    id: str
+    name: str
+    summary: str
+    templates: list[str]
+
+
 class AgentInstance(BaseModel):
     id: str
     room_id: str
@@ -40,6 +47,7 @@ class AgentInstance(BaseModel):
     goal: str | None = None
     controller_termination: str | None = None
     agent_termination: str | None = None
+    codex_session_id: str | None = None
     config_path: str | None = None
     reason: str | None = None
 
@@ -83,6 +91,7 @@ class Room(BaseModel):
     controller_termination: str
     agent_termination: str
     share_contexts: list[str]
+    planned_template_ids: list[str]
     agent_posting_closed: bool
     muted_agent_ids: list[str]
     state: RoomState
@@ -98,6 +107,7 @@ class CreateRoomRequest(BaseModel):
     agent_termination: str
     share_contexts: list[str]
     templates: list[str]
+    teams: list[str]
 
 
 class PostMessageRequest(BaseModel):

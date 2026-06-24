@@ -1,0 +1,8 @@
+model = "gpt-5.4-mini"
+
+[features]
+goals = true
+
+[agents]
+max_threads = 4
+max_depth = 1

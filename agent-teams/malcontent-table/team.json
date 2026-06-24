@@ -1,0 +1,11 @@
+{
+  "id": "malcontent-table",
+  "name": "不満卓",
+  "summary": "不満と辛口批判",
+  "templates": [
+    "malcontent-user",
+    "malcontent-ops",
+    "malcontent-roaster",
+    "hiroyuki"
+  ]
+}

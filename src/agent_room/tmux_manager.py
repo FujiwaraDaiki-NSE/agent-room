@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -15,6 +17,11 @@ from .models import AgentInstance, AgentTemplate, Room
 class TmuxError(RuntimeError):
     pass
 
+
+SESSION_ID_PATTERN = re.compile(
+    r"rollout-\d{4}-\d{2}-\d{2}(?:T\d{2}-\d{2}-\d{2})?-"
+    r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl?$"
+)
 
 SHARE_COPY_IGNORE_PATTERNS = (
     "node_modules",
@@ -117,27 +124,51 @@ class TmuxManager:
         if not agent.pane_id:
             raise TmuxError(f"agent has no tmux pane: {agent.id}")
         text = "\n".join(
-            self._goal_lines(agent.template_id == "controller", goal, controller_termination, agent_termination)
+            [
+                *self._goal_lines(agent.template_id == "controller", goal, controller_termination, agent_termination),
+                *self._room_communication_lines(),
+                *self._deepening_lines(),
+            ]
         )
-        subprocess.run(["tmux", "send-keys", "-t", agent.pane_id, text, "Enter"], check=True)
+        self._send_codex_prompt(agent.pane_id, text)
 
     def send_controller_whisper(self, agent: AgentInstance, text: str) -> None:
         if not agent.pane_id:
             raise TmuxError(f"controller has no tmux pane: {agent.id}")
-        prompt = "\n".join(
-            [
-                "Private controller whisper from the user:",
-                text,
-                "",
-                "This is not a public room message.",
-                "Use controller_read if you need the private log, then reply with controller_post.",
-                "Use room_post only if the response should be visible to every agent.",
-            ]
-        )
-        try:
-            subprocess.run(["tmux", "send-keys", "-t", agent.pane_id, prompt, "Enter"], check=True)
-        except subprocess.CalledProcessError as exc:
-            raise TmuxError(f"failed to notify controller pane: {agent.pane_id}") from exc
+        prompt = self._controller_whisper_prompt(text)
+        self._send_codex_prompt(agent.pane_id, prompt)
+
+    def resume_controller(self, agent: AgentInstance, text: str) -> tuple[str, str]:
+        if not os.environ.get("TMUX_PANE"):
+            raise TmuxError("controller resume requires the server to run inside tmux")
+        if agent.template_id != "controller":
+            raise TmuxError(f"agent is not a controller: {agent.id}")
+        if agent.pane_id:
+            self.stop(agent, True)
+        runtime_dir = self._agent_runtime_dir(agent)
+        session_id = self.resolve_codex_session_id(agent)
+        prompt_path = runtime_dir / "controller-resume-prompt.md"
+        prompt_path.write_text(self._controller_whisper_prompt(text), encoding="utf-8")
+        pane_id = self._split_pane(self._resume_command(runtime_dir, prompt_path, session_id, True))
+        return pane_id, session_id
+
+    def has_agent_exited(self, agent: AgentInstance) -> bool:
+        if not agent.runtime_dir:
+            return False
+        return self._exit_marker(Path(agent.runtime_dir)).is_file()
+
+    def resolve_codex_session_id(self, agent: AgentInstance) -> str:
+        runtime_dir = self._agent_runtime_dir(agent)
+        if agent.codex_session_id:
+            if self._session_file_for_id(runtime_dir, agent.codex_session_id):
+                return agent.codex_session_id
+            raise TmuxError(f"codex session not found: {agent.codex_session_id}")
+        session_ids = self._discover_codex_session_ids(runtime_dir)
+        if len(session_ids) == 1:
+            return session_ids[0]
+        if not session_ids:
+            raise TmuxError(f"codex session not found for agent: {agent.id}")
+        raise TmuxError(f"codex session id is ambiguous for agent: {agent.id}")
 
     def _goal_prompt(
         self,
@@ -165,6 +196,7 @@ class TmuxManager:
             "",
             *goal_lines[1:],
             *self._share_context_lines(room.share_contexts),
+            *self._planned_participant_lines(room, template.scope == "controller"),
             "MCP tools:",
             "- room_read: read public room messages",
             "- room_post: post a public room message",
@@ -178,6 +210,8 @@ class TmuxManager:
             "",
             "Speak to the meeting only through the Agent Room MCP tools.",
             "Do not call the Agent Room HTTP API or CLI commands directly.",
+            *self._room_communication_lines(),
+            *self._deepening_lines(),
         ]
         if template.scope == "controller":
             lines.extend(
@@ -187,20 +221,51 @@ class TmuxManager:
                     "- controller_read: read private controller messages",
                     "- controller_post: post a private controller message",
                     "- agent_deploy: deploy agents",
+                    "- planned_agents: list planned regular agent template ids",
                     "- agent_stop: stop an agent pane",
                     "- agent_goal: send a new goal to an agent",
                     "- agent_config: update an agent runtime config",
                     "- room_status_update: update the user-visible meeting status",
                     "- room_close_discussion: close public discussion for regular agents",
                     "- room_open_discussion: reopen public discussion for regular agents",
+                    "- room_finish: mark the room done and close all agent panes",
                     "- agent_mute: mute one regular agent's public messages",
                     "- agent_unmute: unmute one regular agent's public messages",
                     "",
-                    "Use room_status_update before phase changes, after each round, and before final summaries.",
+                    "Use room_status_update before phase changes, after each round, and before final reports.",
+                    "The room starts quiet for regular agents. Post the first public facilitation message, then use room_open_discussion when agents should begin contributing.",
+                    "Use planned_agents to check selected regular agent templates. Deploy planned agents only when their viewpoint is needed for the current phase.",
+                    "When assigning turns, state whether the reply is for the whole room or for a named person, and require the same addressee marker in agent replies.",
+                    "Use room_close_discussion before the final public report, then use room_finish after the outcome is complete.",
+                    "Do not use room_done to finish the room; it only marks your controller agent done.",
                     "Use controller tools for user-side whispers and lifecycle operations.",
                 ]
             )
+        else:
+            lines.extend(
+                [
+                    "",
+                    "Start discipline:",
+                    "- Do not post before the controller's first public facilitation message.",
+                    "- Speak only when the controller names you, requests all agents, or assigns your current temporary viewpoint.",
+                    "- If room_post is rejected because the discussion is closed, read the room again later and wait for the controller.",
+                ]
+            )
         return "\n".join(lines)
+
+    def _planned_participant_lines(self, room: Room, is_controller: bool) -> list[str]:
+        if not is_controller:
+            return []
+        lines = [
+            "Planned Agents:",
+            "Deploy these template IDs with agent_deploy when the workshop needs them.",
+        ]
+        if room.planned_template_ids:
+            lines.extend(f"- {template_id}" for template_id in room.planned_template_ids)
+        else:
+            lines.append("- No regular agents were selected.")
+        lines.append("")
+        return lines
 
     def _share_context_lines(self, share_contexts: list[str]) -> list[str]:
         lines = [
@@ -248,15 +313,57 @@ class TmuxManager:
             )
         return lines
 
+    def _room_communication_lines(self) -> list[str]:
+        return [
+            "",
+            "Room communication rules:",
+            "- Start every public room_post with `宛先: 全体` or `宛先: <相手名>`.",
+            "- When replying to a specific post, name the speaker or message number if it is visible.",
+            "- Write enough context for someone who has not followed the last few messages.",
+            "- Explain what proposal, phase, or claim you are reacting to, why it matters, and what should change next.",
+            "- Use natural conversational Japanese. Concise means no filler, not label-only fragments.",
+            "- Do not post unexplained fragments such as only `revise: ...` or a bare checklist of labels.",
+        ]
+
+    def _deepening_lines(self) -> list[str]:
+        return [
+            "",
+            "Deepening rules:",
+            "- In the `deepen` phase, do not add broad new ideas unless they directly improve a shortlisted idea.",
+            "- Turn each shortlisted idea into a concrete candidate: who it is for, what problem it solves, what changes, what stays out of scope, and how it would work.",
+            "- Name the strongest assumption, the easiest way it could fail, and the smallest revision that would make it sharper.",
+            "- Propose one concrete validation step with expected evidence and a stop condition.",
+            "- When critiquing, improve the candidate's precision instead of only listing risks.",
+        ]
+
     def _agent_command(self, runtime_dir: Path, prompt_path: Path, can_write: bool) -> str:
         runtime = shlex.quote(str(runtime_dir))
         codex_home = shlex.quote(str(runtime_dir / ".codex"))
         prompt_name = shlex.quote(prompt_path.name)
+        exit_marker = shlex.quote(str(self._exit_marker(runtime_dir)))
         permission_args = self._permission_args(can_write)
         return (
             f"cd {runtime} && "
             f"export CODEX_HOME={codex_home} && "
+            f"rm -f {exit_marker} && "
             f'codex {permission_args} "$(cat {prompt_name})"; '
+            f"touch {exit_marker}; "
+            "exec bash"
+        )
+
+    def _resume_command(self, runtime_dir: Path, prompt_path: Path, session_id: str, can_write: bool) -> str:
+        runtime = shlex.quote(str(runtime_dir))
+        codex_home = shlex.quote(str(runtime_dir / ".codex"))
+        prompt_name = shlex.quote(prompt_path.name)
+        session = shlex.quote(session_id)
+        exit_marker = shlex.quote(str(self._exit_marker(runtime_dir)))
+        permission_args = self._permission_args(can_write)
+        return (
+            f"cd {runtime} && "
+            f"export CODEX_HOME={codex_home} && "
+            f"rm -f {exit_marker} && "
+            f'codex resume {permission_args} {session} "$(cat {prompt_name})"; '
+            f"touch {exit_marker}; "
             "exec bash"
         )
 
@@ -357,12 +464,14 @@ class TmuxManager:
                     "controller_read",
                     "controller_post",
                     "agent_deploy",
+                    "planned_agents",
                     "agent_stop",
                     "agent_goal",
                     "agent_config",
                     "room_status_update",
                     "room_close_discussion",
                     "room_open_discussion",
+                    "room_finish",
                     "agent_mute",
                     "agent_unmute",
                 ]
@@ -399,3 +508,68 @@ class TmuxManager:
             capture_output=True,
         )
         return result.stdout.strip()
+
+    def _send_codex_prompt(self, pane_id: str, text: str) -> None:
+        buffer_name = f"agent-room-{uuid.uuid4().hex}"
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as file:
+                file.write(text)
+                temp_path = Path(file.name)
+            subprocess.run(["tmux", "load-buffer", "-b", buffer_name, str(temp_path)], check=True)
+            subprocess.run(["tmux", "paste-buffer", "-dpr", "-b", buffer_name, "-t", pane_id], check=True)
+            subprocess.run(["tmux", "send-keys", "-t", pane_id, "Enter"], check=True)
+        except subprocess.CalledProcessError as exc:
+            raise TmuxError(f"failed to send prompt to pane: {pane_id}") from exc
+        finally:
+            if temp_path:
+                temp_path.unlink(missing_ok=True)
+            subprocess.run(
+                ["tmux", "delete-buffer", "-b", buffer_name],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+    def _agent_runtime_dir(self, agent: AgentInstance) -> Path:
+        if not agent.runtime_dir:
+            raise TmuxError(f"agent has no runtime directory: {agent.id}")
+        runtime_dir = Path(agent.runtime_dir)
+        if not runtime_dir.is_dir():
+            raise TmuxError(f"agent runtime directory not found: {runtime_dir}")
+        return runtime_dir
+
+    def _controller_whisper_prompt(self, text: str) -> str:
+        return "\n".join(
+            [
+                "Private controller whisper from the user:",
+                text,
+                "",
+                "This is not a public room message.",
+                "Use controller_read if you need the private log, then reply with controller_post.",
+                "Use room_post only if the response should be visible to every agent.",
+            ]
+        )
+
+    def _exit_marker(self, runtime_dir: Path) -> Path:
+        return runtime_dir / ".codex" / "agent-exited"
+
+    def _discover_codex_session_ids(self, runtime_dir: Path) -> list[str]:
+        sessions_dir = runtime_dir / ".codex" / "sessions"
+        if not sessions_dir.is_dir():
+            return []
+        session_ids = []
+        for path in sorted(sessions_dir.rglob("rollout-*.json*"), key=lambda item: item.stat().st_mtime, reverse=True):
+            match = SESSION_ID_PATTERN.match(path.name)
+            if match and match.group(1) not in session_ids:
+                session_ids.append(match.group(1))
+        return session_ids
+
+    def _session_file_for_id(self, runtime_dir: Path, session_id: str) -> Path | None:
+        sessions_dir = runtime_dir / ".codex" / "sessions"
+        if not sessions_dir.is_dir():
+            return None
+        for path in sessions_dir.rglob(f"rollout-*-{session_id}.json*"):
+            if SESSION_ID_PATTERN.match(path.name):
+                return path
+        return None

@@ -1,0 +1,12 @@
+{
+  "id": "critique-lab",
+  "name": "批判ラボ",
+  "summary": "視点別 critic と軌道修正役",
+  "templates": [
+    "critique-technical",
+    "critique-user",
+    "critique-business",
+    "critique-risk",
+    "idea-reviser"
+  ]
+}

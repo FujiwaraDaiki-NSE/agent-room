@@ -16,6 +16,7 @@ The room log is the shared state. Each agent reads and posts through the room AP
 - Controller agent with lifecycle commands
 - Controller runs with workspace write access; other agents run read-only with network access
 - Multiple agent templates with personalities
+- Agent teams that select template groups
 - Per-template `.codex` and `AGENTS.md`
 - Codex subagent config under each template
 
@@ -33,6 +34,9 @@ share/
 
 agent-templates/
   critic/
+
+agent-teams/
+  critique-lab/
   researcher/
   builder/
   synthesizer/
@@ -96,7 +100,7 @@ The app links each runtime agent's `.codex/auth.json` to the file you pass:
 --codex-auth-file "$HOME/.codex/auth.json"
 ```
 
-This keeps personality and agent config isolated without forcing each pane to log in again.
+This keeps speaking tendency and agent config isolated without forcing each pane to log in again.
 
 ## Room Flow
 
@@ -104,13 +108,37 @@ This keeps personality and agent config isolated without forcing each pane to lo
 2. Enter `Controller Termination`.
 3. Enter `Agent Termination`.
 4. Select shared context directories from `share/`.
-5. Select templates.
+5. Select templates and teams.
 6. Press `Start`.
-7. The app creates one tmux pane per selected agent. `Controller` is always included.
-8. Each Codex TUI starts with `/goal`.
-9. Agents read selected shared context through `./share/<context-name>`.
-10. Agents read and post through the Agent Room MCP tools.
-11. The controller marks the room done or stops agent panes.
+7. The app starts only the `Controller` pane. Checked regular agents are stored as planned agents.
+8. The controller checks planned agents with `planned_agents` and deploys them with `agent_deploy` only when their viewpoint is needed.
+9. Each deployed Codex TUI starts with `/goal`.
+10. Agents read selected shared context through `./share/<context-name>`.
+11. Agents read and post through the Agent Room MCP tools.
+12. The room starts quiet for regular agents, so the controller posts the first facilitation message and opens discussion.
+13. The controller closes discussion, posts the final implementation handoff report, and finishes the room.
+14. Finishing the room closes all agent panes. A later Controller tab message resumes the controller session when possible.
+
+## Workshop Flow
+
+The controller runs the room as a workshop, not open-ended free discussion.
+
+1. `align`: align the goal, decision scope, expected output, and action format.
+2. `diverge`: collect many ideas without judging them.
+3. `cluster`: group similar ideas and name the main directions.
+4. `deepen`: turn 2-3 promising directions into concrete candidate sheets covering target, problem, mechanism, non-goals, assumptions, failure modes, revisions, validation evidence, and stop conditions.
+5. `evaluate`: compare shortlisted ideas by effect, feasibility, urgency, and cost.
+6. `converge`: classify ideas into implement now, research next, and drop for now; prepare an implementation handoff report.
+
+Agent personalities stay active, but meeting roles are temporary. The controller assigns different viewpoints to different agents each phase so one agent is not permanently fixed to one perspective.
+
+Every phase ends with a consensus gate. The controller posts the current synthesis, explains what will change if the room advances, and asks agents for `accept`, `revise`, or `block` with reasons. A blocker must be resolved, split, or recorded as an unresolved implementation question before advancing.
+
+The final report should be detailed enough for another agent to start implementation. It includes purpose, background, decisions, requirements, verification viewpoints, risks, and unresolved questions.
+
+When narrowing ideas, the controller must explain the criteria, supporting evidence, selected ideas, dropped or merged ideas, accepted tradeoff, and what would change the decision later.
+
+During `deepen`, agents should improve the precision of shortlisted ideas rather than only add opinions. Each contribution should either clarify the mechanism, expose a testable assumption, propose a concrete revision, or define a small validation step.
 
 ## Shared Context
 
@@ -131,8 +159,10 @@ Room start waits for these runtime copies and agent deployment to finish before 
 ## Room Controls
 
 - `New`: Stop current agent panes and replace the current room with a fresh draft room.
-- `Start`: Start the current room from the form and deploy the selected templates.
-- `Close`: Stop the current room and close only its agent panes.
+- `Start`: Start the current room from the form and deploy the checked templates.
+
+`Teams` check or clear matching template checkboxes. `Default` contains the original starter set. `Critique Lab` contains perspective-specific critics and an idea revision agent. `Malcontent Table` contains complaint-heavy agents, including one sharp critic and a skeptical debater.
+- `Close`: Stop the current room manually and close its agent panes.
 - `Refresh`: Reload templates, the current room, messages, and tmux status.
 
 The app keeps only one current room. Use `New` to clear the public log and controller private log by replacing the room.
@@ -141,6 +171,7 @@ After `Start`, the top brief keeps `Goal`, `Controller Termination`, and `Agent 
 The live room shows controller-managed meeting status, a compact participant roster, round table, bottom progress strip, and activity rail.
 
 The `Controller` tab is private. Use it for instructions or whispers that should go only to the controller.
+If the controller pane is closed, a Controller tab message resumes the saved controller Codex session when possible.
 
 ## Agent MCP Tools
 
@@ -159,18 +190,22 @@ Controller agents also receive:
 - `controller_read`
 - `controller_post`
 - `agent_deploy`
+- `planned_agents`
 - `agent_stop`
 - `agent_goal`
 - `agent_config`
 - `room_status_update`
 - `room_close_discussion`
 - `room_open_discussion`
+- `room_finish`
 - `agent_mute`
 - `agent_unmute`
 
 `agent config` writes only to the copied runtime directory for that agent. Template originals under `agent-templates/` are not modified during a meeting.
+`room_done` marks only the calling agent done.
 `room_status_update` updates the left-side `Meeting` panel and bottom progress strip for the user.
 `room_close_discussion` stops regular agents from posting public messages while allowing controller and user messages.
+`room_finish` marks the room done and closes every agent pane, including the controller pane. Use the Controller tab to resume the controller later.
 `agent_mute` stops one regular agent from posting public messages without closing its pane.
 Use `share_contexts`, `share_list`, and `share_read` to inspect selected shared context. Runtime snapshots are also present under `./share/`, so shell tools such as `rg` and `find` can inspect them directly.
 
@@ -184,7 +219,8 @@ uv run agent-room mcp --server http://127.0.0.1:8765 --room-id <room-id> --agent
 
 ## Stop
 
-Use `Stop` in the GUI to stop the room. The app closes agent panes only.
+Use `Close` in the GUI to stop the room manually. The app closes agent panes only.
+Controller-led workshop completion uses `room_finish`, which marks the room done and closes every agent pane.
 
 Manual pane close:
 
@@ -201,13 +237,13 @@ Each template has a manifest:
 ```json
 {
   "id": "critic",
-  "name": "Critic",
-  "shortName": "Critic",
-  "role": "review",
-  "personality": "Skeptical, precise, and evidence-driven. Finds weak assumptions.",
+  "name": "反証役",
+  "shortName": "反証",
+  "role": "レビュー",
+  "personality": "発言傾向: 弱い前提、隠れた矛盾、都合のよい解釈を疑う。",
   "accent": "#D94841",
   "avatar": "avatar.svg",
-  "summary": "Challenges proposals, checks risks, and looks for missing tests or edge cases.",
+  "summary": "弱い前提、隠れた矛盾、都合のよい解釈を疑う。",
   "launch": true,
   "permissions": ["read_room", "post_message", "mark_done"]
 }

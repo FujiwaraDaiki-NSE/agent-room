@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Agent Room</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260622-meeting-status" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260623-markdown-chat" />
   </head>
   <body>
     <main class="shell">
@@ -14,10 +14,10 @@
             <h1>Agent Room</h1>
             <p id="tmuxHelp">tmux</p>
           </div>
-          <div class="statusCluster" aria-label="Room status">
-            <span id="roomStatusPill" class="statusPill">Draft</span>
-            <span id="agentCountPill" class="statusPill">Agents 0</span>
-            <span id="socketStatusPill" class="statusPill">Socket off</span>
+          <div class="statusCluster" aria-label="会議状態">
+            <span id="roomStatusPill" class="statusPill">下書き</span>
+            <span id="agentCountPill" class="statusPill">Agent 0</span>
+            <span id="socketStatusPill" class="statusPill">Socketなし</span>
           </div>
           <div class="actions">
             <button id="refresh">Refresh</button>
@@ -28,20 +28,20 @@
 
         <section class="briefBar">
           <div class="briefItem">
-            <span>Goal</span>
-            <strong id="briefGoal">Draft</strong>
+            <span>目的</span>
+            <strong id="briefGoal">下書き</strong>
           </div>
           <div class="briefItem">
-            <span>Controller Termination</span>
-            <strong id="briefControllerTermination">Draft</strong>
+            <span>進行役終了条件</span>
+            <strong id="briefControllerTermination">下書き</strong>
           </div>
           <div class="briefItem">
-            <span>Agent Termination</span>
-            <strong id="briefAgentTermination">Draft</strong>
+            <span>Agent終了条件</span>
+            <strong id="briefAgentTermination">下書き</strong>
           </div>
           <div class="briefItem">
-            <span>Context</span>
-            <strong id="briefShareContexts">None</strong>
+            <span>共有文脈</span>
+            <strong id="briefShareContexts">なし</strong>
           </div>
         </section>
         <div id="statusLine" class="statusLine" aria-live="polite"></div>
@@ -52,31 +52,31 @@
           <aside class="controlRail">
             <section class="controlPanel">
               <div class="sectionHead">
-                <h2>Setup</h2>
-                <span id="setupState">Draft</span>
+                <h2>設定</h2>
+                <span id="setupState">下書き</span>
               </div>
               <label class="field">
-              Goal
+              目的
                 <textarea id="goal" rows="4"></textarea>
               </label>
               <label class="field">
-              Controller Termination
+              進行役終了条件
                 <textarea id="controllerTermination" rows="3"></textarea>
               </label>
               <label class="field">
-              Agent Termination
+              Agent終了条件
                 <textarea id="agentTermination" rows="3"></textarea>
               </label>
               <div>
                 <div class="sectionHead">
-                  <h2>Context</h2>
-                  <span>share</span>
+                  <h2>共有文脈</h2>
+                  <span>共有</span>
                 </div>
                 <div id="shareContextList" class="contextList"></div>
               </div>
               <div>
                 <div class="sectionHead">
-                  <h2>Templates</h2>
+                  <h2>テンプレート</h2>
                   <div class="sectionActions">
                     <button id="selectAllTemplates" type="button">All</button>
                     <button id="clearTemplates" type="button">Clear</button>
@@ -85,46 +85,57 @@
                 </div>
                 <div id="templateList" class="templateList"></div>
               </div>
+              <div>
+                <div class="sectionHead">
+                  <h2>チーム</h2>
+                  <span id="teamCount">0</span>
+                </div>
+                <div id="teamList" class="teamList"></div>
+              </div>
               <button id="startRoom" class="primary">Start</button>
             </section>
 
             <section class="meetingStatusPanel">
               <div class="sectionHead">
-                <h2>Meeting</h2>
-                <span id="meetingStatusUpdated">Pending</span>
+                <h2>会議</h2>
+                <span id="meetingStatusUpdated">保留</span>
               </div>
               <div class="meetingStatusBody">
                 <div class="statusPair">
-                  <span>Phase</span>
-                  <strong id="meetingPhase">Draft</strong>
+                  <span>フェーズ</span>
+                  <strong id="meetingPhase">下書き</strong>
                 </div>
                 <div class="statusPair">
-                  <span>Topic</span>
-                  <strong id="meetingTopic">None</strong>
+                  <span>論点</span>
+                  <strong id="meetingTopic">なし</strong>
                 </div>
                 <div class="statusBlock">
-                  <span>Summary</span>
-                  <p id="meetingSummary">Pending</p>
+                  <span>要約</span>
+                  <p id="meetingSummary">保留</p>
                 </div>
                 <div class="statusBlock">
-                  <span>Decisions</span>
+                  <span>遷移</span>
+                  <div id="meetingTransitions" class="meetingTransitions">保留</div>
+                </div>
+                <div class="statusBlock">
+                  <span>決定</span>
                   <ul id="meetingDecisions" class="statusList"></ul>
                 </div>
                 <div class="statusBlock">
-                  <span>Open</span>
+                  <span>未解決</span>
                   <ul id="meetingOpenQuestions" class="statusList"></ul>
                 </div>
                 <div class="statusBlock">
-                  <span>Next</span>
-                  <p id="meetingNext">Controller</p>
+                  <span>次</span>
+                  <p id="meetingNext">進行役</p>
                 </div>
               </div>
             </section>
 
             <section class="rosterPanel">
               <div class="sectionHead">
-                <h2>Agents</h2>
-                <span id="activeAgentCount">0 active</span>
+                <h2>Agent</h2>
+                <span id="activeAgentCount">稼働 0</span>
               </div>
               <div id="agentRoster" class="agentRoster"></div>
             </section>
@@ -133,11 +144,11 @@
           <section class="roomDeck">
             <div class="roomToolbar">
               <div>
-                <h2>Room</h2>
-                <span id="roomState">Idle</span>
+                <h2>会議室</h2>
+                <span id="roomState">待機</span>
               </div>
               <div class="deployBar">
-                <label class="srOnly" for="deployTemplate">Deploy agent</label>
+                <label class="srOnly" for="deployTemplate">Agent投入</label>
                 <select id="deployTemplate"></select>
                 <button id="deployAgent">Deploy</button>
               </div>
@@ -146,49 +157,49 @@
             <div class="tableWrap">
               <div class="roundTable">
                 <div class="tableCore">
-                  <span id="tableState">Idle</span>
+                  <span id="tableState">待機</span>
                 </div>
                 <div id="agentLayer"></div>
               </div>
             </div>
-            <div id="progressStrip" class="progressStrip">Progress</div>
+            <div id="progressStrip" class="progressStrip">進捗</div>
           </section>
         </section>
 
         <aside class="sidebar">
-          <div class="railTabs" role="tablist" aria-label="Chats">
+          <div class="railTabs" role="tablist" aria-label="発言">
             <button id="messagesTab" class="active" type="button" role="tab" aria-selected="true" aria-controls="messagesPanel">Messages</button>
             <button id="controllerTab" type="button" role="tab" aria-selected="false" aria-controls="controllerPanel">Controller</button>
           </div>
 
           <section id="messagesPanel" class="chatPanel active" role="tabpanel" aria-labelledby="messagesTab">
             <div class="sidebarHead">
-              <h2>Activity</h2>
-              <span id="activeRoom">No room</span>
+              <h2>発言</h2>
+              <span id="activeRoom">Roomなし</span>
             </div>
-            <div id="messages" class="messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Public messages" tabindex="0"></div>
+            <div id="messages" class="messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="公開発言" tabindex="0"></div>
             <div class="composer">
-              <label class="srOnly" for="messageText">Message</label>
-              <textarea id="messageText" rows="2" placeholder="Message"></textarea>
+              <label class="srOnly" for="messageText">発言</label>
+              <textarea id="messageText" rows="2" placeholder="発言"></textarea>
               <button id="sendMessage" aria-label="Send public message">Send</button>
             </div>
           </section>
 
           <section id="controllerPanel" class="chatPanel" role="tabpanel" aria-labelledby="controllerTab" hidden>
             <div class="sidebarHead">
-              <h2>Controller</h2>
-              <span>Private</span>
+              <h2>進行役</h2>
+              <span>非公開</span>
             </div>
-            <div id="controllerMessages" class="messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Controller private messages" tabindex="0"></div>
+            <div id="controllerMessages" class="messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="進行役への非公開発言" tabindex="0"></div>
             <div class="composer">
-              <label class="srOnly" for="controllerText">Whisper</label>
-              <textarea id="controllerText" rows="2" placeholder="Whisper"></textarea>
+              <label class="srOnly" for="controllerText">非公開</label>
+              <textarea id="controllerText" rows="2" placeholder="非公開"></textarea>
               <button id="sendControllerMessage" aria-label="Send controller whisper">Send</button>
             </div>
           </section>
         </aside>
       </section>
     </main>
-    <script src="/static/app.js?v=20260622-meeting-status"></script>
+    <script src="/static/app.js?v=20260623-markdown-chat"></script>
   </body>
 </html>
