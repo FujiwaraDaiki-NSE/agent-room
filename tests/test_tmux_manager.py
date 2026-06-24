@@ -295,12 +295,16 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "share_contexts" in controller_prompt
     assert "share_list" in controller_prompt
     assert "share_read" in controller_prompt
+    assert "Room communication rules:" in controller_prompt
+    assert "`宛先: 全体` or `宛先: <相手名>`" in controller_prompt
+    assert "Do not post unexplained fragments" in controller_prompt
     assert "room_status_update" in controller_prompt
     assert "planned_agents" in controller_prompt
     assert "room_close_discussion" in controller_prompt
     assert "room_finish" in controller_prompt
     assert "agent_mute" in controller_prompt
     assert "The room starts quiet for regular agents" in controller_prompt
+    assert "state whether the reply is for the whole room or for a named person" in controller_prompt
     assert "room_open_discussion" in controller_prompt
     assert "Planned Agents:" in controller_prompt
     assert "- critic" in controller_prompt
@@ -314,6 +318,9 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "share_contexts" in agent_prompt
     assert "share_list" in agent_prompt
     assert "share_read" in agent_prompt
+    assert "Room communication rules:" in agent_prompt
+    assert "`宛先: 全体` or `宛先: <相手名>`" in agent_prompt
+    assert "Do not post unexplained fragments" in agent_prompt
     assert "room_status_update" not in agent_prompt
     assert "uv run agent-room room" not in agent_prompt
 
@@ -362,6 +369,38 @@ def test_send_controller_whisper_marks_private_prompt(tmp_path, monkeypatch) -> 
     assert load_check is True
     assert calls[1] == (["tmux", "paste-buffer", "-dpr", "-b", buffer_name, "-t", "%1"], True)
     assert calls[2] == (["tmux", "send-keys", "-t", "%1", "Enter"], True)
+
+
+def test_send_goal_includes_room_communication_rules(tmp_path, monkeypatch) -> None:
+    sent = []
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    manager = TmuxManager(Path.cwd(), tmp_path, auth_file)
+    agent = AgentInstance(
+        id="critic-1",
+        room_id="room-test",
+        template_id="critic",
+        name="Critic",
+        short_name="Critic",
+        role="review",
+        personality="Skeptical",
+        accent="#D94841",
+        avatar_url="/api/templates/critic/avatar",
+        state="active",
+        pane_id="%2",
+    )
+
+    monkeypatch.setattr(manager, "_send_codex_prompt", lambda pane_id, text: sent.append((pane_id, text)))
+
+    manager.send_goal(agent, "Discuss next", "Controller done", "Agents done")
+
+    assert sent
+    pane_id, prompt = sent[0]
+    assert pane_id == "%2"
+    assert "Goal:\nDiscuss next" in prompt
+    assert "Room communication rules:" in prompt
+    assert "`宛先: 全体` or `宛先: <相手名>`" in prompt
+    assert "Do not post unexplained fragments" in prompt
 
 
 def test_resume_controller_uses_saved_codex_session(tmp_path, monkeypatch) -> None:

@@ -124,7 +124,10 @@ class TmuxManager:
         if not agent.pane_id:
             raise TmuxError(f"agent has no tmux pane: {agent.id}")
         text = "\n".join(
-            self._goal_lines(agent.template_id == "controller", goal, controller_termination, agent_termination)
+            [
+                *self._goal_lines(agent.template_id == "controller", goal, controller_termination, agent_termination),
+                *self._room_communication_lines(),
+            ]
         )
         self._send_codex_prompt(agent.pane_id, text)
 
@@ -206,6 +209,7 @@ class TmuxManager:
             "",
             "Speak to the meeting only through the Agent Room MCP tools.",
             "Do not call the Agent Room HTTP API or CLI commands directly.",
+            *self._room_communication_lines(),
         ]
         if template.scope == "controller":
             lines.extend(
@@ -229,6 +233,7 @@ class TmuxManager:
                     "Use room_status_update before phase changes, after each round, and before final reports.",
                     "The room starts quiet for regular agents. Post the first public facilitation message, then use room_open_discussion when agents should begin contributing.",
                     "Use planned_agents to check selected regular agent templates. Deploy planned agents only when their viewpoint is needed for the current phase.",
+                    "When assigning turns, state whether the reply is for the whole room or for a named person, and require the same addressee marker in agent replies.",
                     "Use room_close_discussion before the final public report, then use room_finish after the outcome is complete.",
                     "Do not use room_done to finish the room; it only marks your controller agent done.",
                     "Use controller tools for user-side whispers and lifecycle operations.",
@@ -305,6 +310,18 @@ class TmuxManager:
                 ]
             )
         return lines
+
+    def _room_communication_lines(self) -> list[str]:
+        return [
+            "",
+            "Room communication rules:",
+            "- Start every public room_post with `宛先: 全体` or `宛先: <相手名>`.",
+            "- When replying to a specific post, name the speaker or message number if it is visible.",
+            "- Write enough context for someone who has not followed the last few messages.",
+            "- Explain what proposal, phase, or claim you are reacting to, why it matters, and what should change next.",
+            "- Use natural conversational Japanese. Concise means no filler, not label-only fragments.",
+            "- Do not post unexplained fragments such as only `revise: ...` or a bare checklist of labels.",
+        ]
 
     def _agent_command(self, runtime_dir: Path, prompt_path: Path, can_write: bool) -> str:
         runtime = shlex.quote(str(runtime_dir))

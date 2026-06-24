@@ -93,6 +93,21 @@ def test_templates_define_meeting_authority() -> None:
             assert "override the normal round protocol" in text
 
 
+def test_templates_define_contextual_room_posting() -> None:
+    registry = TemplateRegistry(Path.cwd())
+
+    for template in registry.list():
+        agents_md = registry.path_for(template.id) / "AGENTS.md"
+        text = agents_md.read_text(encoding="utf-8")
+        if template.scope == "controller":
+            assert "Require public replies to start with `宛先: 全体`" in text
+            assert "Do not accept low-context fragments" in text
+        else:
+            assert "Start each public post with `宛先: 全体`" in text
+            assert "Write enough context for someone who has not followed the last few messages" in text
+            assert "not label-only fragments" in text
+
+
 def test_teams_reference_regular_agent_templates() -> None:
     registry = TemplateRegistry(Path.cwd())
     team_registry = TeamRegistry(Path.cwd(), registry)
