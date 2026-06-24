@@ -320,8 +320,14 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
 
 def test_send_controller_whisper_marks_private_prompt(tmp_path, monkeypatch) -> None:
     calls = []
+    loaded_prompt = []
+    temp_paths = []
 
-    def fake_run(command, check):
+    def fake_run(command, check, **_kwargs):
+        if command[:3] == ["tmux", "load-buffer", "-b"]:
+            temp_path = Path(command[4])
+            temp_paths.append(temp_path)
+            loaded_prompt.append(temp_path.read_text(encoding="utf-8"))
         calls.append((command, check))
 
     monkeypatch.setattr("subprocess.run", fake_run)
@@ -344,14 +350,18 @@ def test_send_controller_whisper_marks_private_prompt(tmp_path, monkeypatch) -> 
 
     manager.send_controller_whisper(agent, "Private instruction")
 
-    assert calls
-    command, check = calls[0]
-    assert command[:4] == ["tmux", "send-keys", "-t", "%1"]
-    assert "Private controller whisper" in command[4]
-    assert "Private instruction" in command[4]
-    assert "not a public room message" in command[4]
-    assert command[-1] == "Enter"
-    assert check is True
+    assert loaded_prompt
+    assert "Private controller whisper" in loaded_prompt[0]
+    assert "Private instruction" in loaded_prompt[0]
+    assert "not a public room message" in loaded_prompt[0]
+    load_command, load_check = calls[0]
+    buffer_name = load_command[3]
+    assert load_command[:3] == ["tmux", "load-buffer", "-b"]
+    assert buffer_name.startswith("agent-room-")
+    assert temp_paths and not temp_paths[0].exists()
+    assert load_check is True
+    assert calls[1] == (["tmux", "paste-buffer", "-dpr", "-b", buffer_name, "-t", "%1"], True)
+    assert calls[2] == (["tmux", "send-keys", "-t", "%1", "Enter"], True)
 
 
 def test_resume_controller_uses_saved_codex_session(tmp_path, monkeypatch) -> None:

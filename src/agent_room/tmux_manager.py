@@ -6,6 +6,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -125,16 +126,13 @@ class TmuxManager:
         text = "\n".join(
             self._goal_lines(agent.template_id == "controller", goal, controller_termination, agent_termination)
         )
-        subprocess.run(["tmux", "send-keys", "-t", agent.pane_id, text, "Enter"], check=True)
+        self._send_codex_prompt(agent.pane_id, text)
 
     def send_controller_whisper(self, agent: AgentInstance, text: str) -> None:
         if not agent.pane_id:
             raise TmuxError(f"controller has no tmux pane: {agent.id}")
         prompt = self._controller_whisper_prompt(text)
-        try:
-            subprocess.run(["tmux", "send-keys", "-t", agent.pane_id, prompt, "Enter"], check=True)
-        except subprocess.CalledProcessError as exc:
-            raise TmuxError(f"failed to notify controller pane: {agent.pane_id}") from exc
+        self._send_codex_prompt(agent.pane_id, prompt)
 
     def resume_controller(self, agent: AgentInstance, text: str) -> tuple[str, str]:
         if not os.environ.get("TMUX_PANE"):
@@ -480,6 +478,28 @@ class TmuxManager:
             capture_output=True,
         )
         return result.stdout.strip()
+
+    def _send_codex_prompt(self, pane_id: str, text: str) -> None:
+        buffer_name = f"agent-room-{uuid.uuid4().hex}"
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as file:
+                file.write(text)
+                temp_path = Path(file.name)
+            subprocess.run(["tmux", "load-buffer", "-b", buffer_name, str(temp_path)], check=True)
+            subprocess.run(["tmux", "paste-buffer", "-dpr", "-b", buffer_name, "-t", pane_id], check=True)
+            subprocess.run(["tmux", "send-keys", "-t", pane_id, "Enter"], check=True)
+        except subprocess.CalledProcessError as exc:
+            raise TmuxError(f"failed to send prompt to pane: {pane_id}") from exc
+        finally:
+            if temp_path:
+                temp_path.unlink(missing_ok=True)
+            subprocess.run(
+                ["tmux", "delete-buffer", "-b", buffer_name],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
 
     def _agent_runtime_dir(self, agent: AgentInstance) -> Path:
         if not agent.runtime_dir:
