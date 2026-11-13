@@ -114,6 +114,10 @@ async function api(path, options = {}) {
 }
 
 async function boot() {
+  $("openShareFolder").onclick = () => $("shareFolderInput").click();
+  $("openShareFiles").onclick = () => $("shareFilesInput").click();
+  $("shareFolderInput").onchange = event => uploadShare(event.target, true);
+  $("shareFilesInput").onchange = event => uploadShare(event.target, false);
   $("openWhiteboard").onclick = () => openDocument("whiteboard");
   $("openMinutes").onclick = () => openDocument("minutes");
   $("closeDrawer").onclick = closeDocument;
@@ -242,8 +246,9 @@ async function loadRoom() {
     renderRoom();
     return;
   }
+  const shareEdited = state.shareSelection !== null && JSON.stringify(state.shareSelection) !== JSON.stringify(state.room.share_contexts);
   state.room = await api(`/api/rooms/${state.room.id}`);
-  if (state.room.state !== "draft") state.shareSelection = [...state.room.share_contexts];
+  if (state.room.state !== "draft" && !shareEdited) state.shareSelection = [...state.room.share_contexts];
   syncRoomForm();
   [state.messages, state.controllerMessages, state.events] = await Promise.all([
     api(`/api/rooms/${state.room.id}/messages`),
@@ -455,6 +460,43 @@ function formatFileSize(bytes) {
   let unit = 0;
   while (value >= 1000 && unit < units.length - 1) { value /= 1000; unit++; }
   return `${unit === 0 ? value : value.toFixed(1)} ${units[unit]}`;
+}
+
+async function uploadShare(input, directory) {
+  const excluded = new Set([".git", "node_modules", ".venv", "__pycache__", ".pytest_cache"]);
+  const files = [...input.files].filter(file => !(directory ? file.webkitRelativePath : file.name).split("/").some(part => excluded.has(part)));
+  input.value = "";
+  if (!files.length) { $("shareUploadStatus").textContent = "追加できるファイルがありません（除外ディレクトリ・空フォルダは送信されません）"; return; }
+  const controls = [$("openShareFolder"), $("openShareFiles"), $("saveShare")];
+  controls.forEach(button => button.disabled = true);
+  let completed = 0;
+  const selected = new Set();
+  const status = $("shareUploadStatus");
+  status.textContent = `アップロード中 0 / ${files.length}`;
+  try {
+    if (directory) {
+      const name = files[0].webkitRelativePath.split("/")[0];
+      await api(`/api/share/directories?path=${encodeURIComponent(name)}`, {method:"POST"});
+    }
+    for (const file of files) {
+      const path = directory ? file.webkitRelativePath : file.name;
+      await api(`/api/share/files?path=${encodeURIComponent(path)}`, {method:"PUT", headers:{"Content-Type":"application/octet-stream"}, body:file});
+      selected.add(directory ? path.split("/")[0] : path);
+      completed++;
+      status.textContent = `アップロード中 ${completed} / ${files.length}`;
+    }
+    status.textContent = `追加しました ${completed} / ${files.length}`;
+  } catch (error) {
+    status.textContent = `アップロード失敗 ${completed} / ${files.length}: ${error.message}`;
+  } finally {
+    selected.forEach(path => { if (!state.shareSelection.includes(path)) state.shareSelection.push(path); });
+    try {
+      state.shareContexts = await api("/api/share/tree");
+      state.shareTree.clear();
+      renderShareContexts();
+    } catch (error) { status.textContent += ` 一覧の更新失敗: ${error.message}`; }
+    controls.forEach(button => button.disabled = false);
+  }
 }
 
 function renderShareContexts() {
@@ -1419,7 +1461,7 @@ function renderHandouts() {
     wrapper.append(readers); body.append(wrapper);
   }
   state.room.share_contexts.forEach(path => entry(path, path));
-  if (!state.room.share_contexts.length) body.textContent = "配布資料はありません";
+  if (!state.room.share_contexts.length) { const empty = document.createElement("p"); empty.textContent = "配布資料はありません"; body.append(empty); }
   if (state.handoutContent && state.room.share_contexts.some(p => state.handoutPath === p || state.handoutPath.startsWith(p + "/"))) {
     const title = document.createElement("h3"); title.textContent = state.handoutPath; body.append(title);
     if (state.handoutContent.type === "dir") state.handoutContent.items.forEach(item => entry(item.relative_path, `${item.type === "dir" ? "▸ " : ""}${item.name}`));

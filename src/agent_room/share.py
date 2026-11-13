@@ -5,16 +5,16 @@ from pathlib import Path
 EXCLUDED = {'.git', 'node_modules', '.venv', '__pycache__', '.pytest_cache'}
 
 
-def resolve_path(root: Path, path: str) -> Path:
+def resolve_path(root: Path, path: str, *, must_exist: bool = True) -> Path:
     parts = path.split('/')
-    if not path or Path(path).is_absolute() or any(p in {'', '.', '..'} or p in EXCLUDED for p in parts):
+    if not path or '\\' in path or Path(path).is_absolute() or any(p in {'', '.', '..'} or p in EXCLUDED for p in parts):
         raise ValueError(f'invalid share path: {path}')
     target = (root / path).resolve()
-    if not target.is_relative_to(root.resolve()) or not target.exists():
+    if not target.is_relative_to(root.resolve()) or (must_exist and not target.exists()):
         raise ValueError(f'share path outside root or missing: {path}')
     if any(part in EXCLUDED for part in target.relative_to(root.resolve()).parts):
         raise ValueError('excluded share directory')
-    if not (target.is_file() or target.is_dir()):
+    if must_exist and not (target.is_file() or target.is_dir()):
         raise ValueError(f'unsupported share path: {path}')
     return target
 
@@ -66,3 +66,26 @@ def read_path(target: Path) -> dict:
         binary = True
         content = ''
     return {'content': '' if binary else content, 'binary': binary, 'truncated': len(data) > 60000, 'bytes': target.stat().st_size}
+
+
+def create_directory(root: Path, path: str) -> None:
+    target = resolve_path(root, path, must_exist=False)
+    if '/' in path:
+        raise ValueError('upload directory must be at the share root')
+    if (root / path).is_symlink():
+        raise ValueError('upload path must not contain symlinks')
+    target.mkdir()
+
+
+def write_file(root: Path, path: str, content: bytes) -> None:
+    target = resolve_path(root, path, must_exist=False)
+    current = root
+    for part in path.split('/'):
+        current = current / part
+        if current.is_symlink():
+            raise ValueError('upload path must not contain symlinks')
+    if '/' in path and not (root / path.split('/')[0]).is_dir():
+        raise ValueError('upload directory must be created first')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open('xb') as stream:
+        stream.write(content)

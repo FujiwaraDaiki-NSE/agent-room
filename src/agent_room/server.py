@@ -22,7 +22,7 @@ from .models import (
     UpdateAgentConfigRequest,
     UpdateMeetingStatusRequest,
 )
-from .share import validate_paths, selected_path, list_path, read_path
+from .share import validate_paths, selected_path, list_path, read_path, create_directory, write_file
 from .models import UpdateShareRequest, ShareAccessRequest
 from .store import Store
 from .templates import TeamRegistry, TemplateError, TemplateRegistry
@@ -110,6 +110,22 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
     def share_tree(path: str = "") -> list[dict]:
         try:
             return list_path(share_root, path)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/share/directories")
+    def upload_directory(path: str) -> dict:
+        try:
+            create_directory(share_root, path)
+            return {"path": path}
+        except (ValueError, OSError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.put("/api/share/files")
+    async def upload_file(request: Request, path: str) -> dict:
+        try:
+            write_file(share_root, path, await request.body())
+            return {"path": path}
         except (ValueError, OSError) as exc:
             raise HTTPException(400, str(exc)) from exc
 

@@ -63,3 +63,48 @@ def test_bounded_text_and_binary(tmp_path):
     assert read_path(target)['truncated'] and not read_path(target)['binary']
     target.write_bytes(b'\x00binary')
     assert read_path(target)['binary'] and not read_path(target)['content']
+
+
+def test_upload_files_and_directories(tmp_path):
+    project = tmp_path / 'project'
+    root = project / 'share'
+    root.mkdir(parents=True)
+    (root / 'README.md').write_text('keep')
+    (root / '.gitignore').write_text('keep')
+    client = TestClient(create_app(project, tmp_path / 'data', tmp_path / 'auth'))
+    room = client.get('/api/rooms').json()[0]
+    assert client.post('/api/share/directories', params={'path': '資料'}).status_code == 200
+    content = b'\x00binary\xff'
+    assert client.put('/api/share/files', params={'path': '資料/nested/file.bin'}, content=content).status_code == 200
+    assert (root / '資料/nested/file.bin').read_bytes() == content
+    assert client.put('/api/share/files', params={'path': 'note.txt'}, content=b'note').status_code == 200
+    assert (root / 'note.txt').read_bytes() == b'note'
+    assert client.get(f"/api/rooms/{room['id']}").json()['share_contexts'] == []
+    assert client.post('/api/share/directories', params={'path': '資料'}).status_code == 400
+    for path in ['note.txt', 'README.md', '.gitignore', '資料/nested/file.bin', '資料']:
+        assert client.put('/api/share/files', params={'path': path}, content=b'overwrite').status_code == 400
+    assert (root / 'README.md').read_text() == 'keep'
+    assert (root / '資料/nested/file.bin').read_bytes() == content
+
+
+@pytest.mark.parametrize('path', ['', '../outside', '/absolute', 'docs/../outside', 'docs//file', 'docs/./file', 'docs\\file', '.git/config', 'node_modules/file', '.venv/file', '__pycache__/file', '.pytest_cache/file', 'docs/.git/config'])
+def test_upload_rejects_invalid_paths(tmp_path, path):
+    project = tmp_path / 'project'
+    (project / 'share/docs').mkdir(parents=True)
+    client = TestClient(create_app(project, tmp_path / 'data', tmp_path / 'auth'))
+    assert client.put('/api/share/files', params={'path': path}, content=b'bad').status_code == 400
+    assert client.post('/api/share/directories', params={'path': path}).status_code == 400
+
+
+def test_upload_rejects_symlinks(tmp_path):
+    project = tmp_path / 'project'
+    root = project / 'share'
+    (root / 'docs').mkdir(parents=True)
+    (root / 'outside').symlink_to(tmp_path, target_is_directory=True)
+    (root / 'alias').symlink_to(root / 'docs', target_is_directory=True)
+    (root / 'dangling').symlink_to(root / 'missing')
+    client = TestClient(create_app(project, tmp_path / 'data', tmp_path / 'auth'))
+    for path in ['outside/file', 'alias/file', 'dangling']:
+        assert client.put('/api/share/files', params={'path': path}, content=b'bad').status_code == 400
+    assert not (root / 'docs/file').exists()
+    assert not (root / 'missing').exists()
