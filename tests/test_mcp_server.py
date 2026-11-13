@@ -33,7 +33,7 @@ async def test_regular_agent_mcp_tools_post_as_agent() -> None:
         names = {tool.name for tool in tools}
         result = await client.call_tool("room_post", {"text": "Public"})
 
-    assert names == {"floor_request", "room_state", "room_read", "room_post", "room_done", "share_contexts", "share_list", "share_read"}
+    assert names == {"seat_move", "seat_request", "seat_leave", "seat_whisper", "sticky_post", "minutes_update", "floor_request", "room_state", "room_read", "room_post", "room_done", "share_contexts", "share_list", "share_read"}
     assert result.data["payload"] == {
         "actor_type": "agent",
         "actor_id": "critic-1",
@@ -124,6 +124,7 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
         mute_result = await client.call_tool("agent_mute", {"target_agent_id": "critic-1", "reason": "over limit"})
 
     assert {
+        "seat_assign", "seat_approve", "seat_decline", "sticky_clear", "whiteboard_update",
         "room_state",
         "agent_assign",
         "floor_approve",

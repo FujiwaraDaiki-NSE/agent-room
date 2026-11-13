@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import AgentInstance, ActorType, Event, FloorRequest, MeetingStatus, Message, Room, RoomState
+from .models import SeatRequest, Whisper, Sticky, WhiteboardVersion, Seat, initial_seats, AgentInstance, ActorType, Event, FloorRequest, MeetingStatus, Message, Room, RoomState
 
 
 AUTO_ROOM_NAME = "Room"
@@ -112,6 +112,12 @@ class Store:
             room.floor_requests = []
             room.state = state
             room.meeting_status = meeting_status(self._room_state_label(state), goal, "", "Controller", None)
+            room.seats = initial_seats()
+            room.seat_requests = []
+            room.whispers = []
+            room.stickies = []
+            room.minutes = ""
+            room.whiteboard = []
             room.agents = []
             data["rooms"] = {room.id: room.model_dump()}
             data["messages"] = {room.id: []}
@@ -216,6 +222,9 @@ class Store:
         with self.lock:
             data = self._read()
             room = self._room(data, room_id)
+            if agent.template_id != "controller":
+                seat = self._audience_seat(room)
+                seat.agent_id = agent.id
             room.agents.append(agent)
             data["rooms"][room_id] = room.model_dump()
             self._append_event(data, room_id, "agent.deployed", actor_id, agent.id, None, agent.model_dump())
@@ -237,6 +246,12 @@ class Store:
             if not updated:
                 raise KeyError(f"agent not found: {agent_id}")
             room.agents = agents
+            if patch.get("state") == "stopped":
+                for seat in room.seats:
+                    if seat.agent_id == agent_id:
+                        seat.agent_id = None
+                room.seat_requests = [r for r in room.seat_requests if r.agent_id != agent_id]
+                room.floor_grants = [a for a in room.floor_grants if a != agent_id]
             data["rooms"][room_id] = room.model_dump()
             self._append_event(data, room_id, event_type, actor_id, agent_id, patch.get("reason"), patch)
             self._write(data)
@@ -277,6 +292,7 @@ class Store:
             if actor_type == "agent" or (agent is not None and agent.template_id != "controller"):
                 if agent is None:
                     raise ValueError(f"agent not found: {actor_id}")
+                self._seat_tool(room, actor_id, "room_post")
                 if actor_id in room.muted_agent_ids:
                     raise ValueError(f"agent is muted: {actor_id}")
                 if room.agent_posting_closed:
@@ -326,6 +342,7 @@ class Store:
         with self.lock:
             data = self._read()
             room = self._room(data, room_id)
+            self._seat_tool(room, agent_id, "floor_request")
             if any(r.agent_id == agent_id for r in room.floor_requests):
                 raise ValueError("agent already has an unresolved floor request")
             room.floor_requests.append(FloorRequest(
@@ -350,6 +367,114 @@ class Store:
                 request.reason = reason
             else:
                 room.floor_requests.remove(request)
+            data["rooms"][room_id] = room.model_dump()
+            self._write(data)
+            return room
+
+    def _audience_seat(self, room: Room) -> Seat:
+        seat = next((s for s in room.seats if s.kind == "audience" and s.agent_id is None), None)
+        if seat is None:
+            raise ValueError("audience seats full")
+        return seat
+
+    def _seat_tool(self, room: Room, agent_id: str, tool: str) -> Seat:
+        seat = next((s for s in room.seats if s.agent_id == agent_id), None)
+        allowed = {"room_post": {"podium", "discussion"}, "floor_request": {"podium", "discussion"},
+                   "seat_whisper": {"discussion", "audience"}, "minutes_update": {"scribe"},
+                   "sticky_post": {"podium", "discussion", "scribe", "audience"}}
+        if seat is None or (tool in allowed and seat.kind not in allowed[tool]):
+            raise ValueError(f"seat does not allow {tool}")
+        return seat
+
+    def seat_action(self, room_id: str, agent_id: str, action: str, seat_id: str | None, reason: str | None) -> Room:
+        with self.lock:
+            data = self._read()
+            room = self._room(data, room_id)
+            current = self._seat_tool(room, agent_id, action)
+            if action == "leave":
+                if current.kind == "audience":
+                    raise ValueError("already in audience")
+                target = self._audience_seat(room)
+            else:
+                target = next((s for s in room.seats if s.id == seat_id), None)
+                if target is None:
+                    raise ValueError("seat not found")
+            if target.agent_id is not None:
+                raise ValueError("seat occupied")
+            if action == "move" and target.kind != current.kind:
+                raise ValueError("different seat kind requires approval")
+            if action == "request":
+                if target.kind == current.kind:
+                    raise ValueError("same kind uses seat_move")
+                if reason is None:
+                    raise ValueError("reason is required")
+                self._require("reason", reason)
+                if any(r.agent_id == agent_id for r in room.seat_requests):
+                    raise ValueError("agent already has an unresolved seat request")
+                room.seat_requests.append(SeatRequest(id=uuid.uuid4().hex, agent_id=agent_id, seat_id=target.id, reason=reason))
+            else:
+                current.agent_id = None
+                target.agent_id = agent_id
+                if action != "move":
+                    room.seat_requests = [r for r in room.seat_requests if r.agent_id != agent_id]
+                if target.kind == "podium" and agent_id not in room.floor_grants:
+                    room.floor_grants.append(agent_id)
+            data["rooms"][room_id] = room.model_dump()
+            self._write(data)
+            return room
+
+    def decline_seat(self, room_id: str, request_id: str, reason: str) -> Room:
+        self._require("reason", reason)
+        with self.lock:
+            data = self._read()
+            room = self._room(data, room_id)
+            entry = next((r for r in room.seat_requests if r.id == request_id), None)
+            if entry is None:
+                raise ValueError("seat request not found")
+            room.seat_requests.remove(entry)
+            data["rooms"][room_id] = room.model_dump()
+            self._write(data)
+            return room
+
+    def whisper(self, room_id: str, agent_id: str, to_agent_id: str, text: str) -> Room:
+        if not 1 <= len(text) <= 200:
+            raise ValueError("whisper text must be 1–200 characters")
+        with self.lock:
+            data = self._read()
+            room = self._room(data, room_id)
+            sender = self._seat_tool(room, agent_id, "seat_whisper")
+            target = self._seat_tool(room, to_agent_id, "seat_whisper")
+            distance = abs(sender.index - target.index)
+            adjacent = sender.kind == target.kind and ((sender.kind == "discussion" and distance in (1, 7)) or
+                       (sender.kind == "audience" and distance == 1 and (sender.index - 1) // 6 == (target.index - 1) // 6))
+            if not adjacent:
+                raise ValueError("whispers require adjacent seats")
+            last = next((w for w in reversed(room.whispers) if {w.from_agent_id, w.to_agent_id} == {agent_id, to_agent_id}), None)
+            if last is not None and last.from_agent_id == agent_id:
+                raise ValueError("wait for recipient reply")
+            room.whispers.append(Whisper(id=uuid.uuid4().hex, from_agent_id=agent_id, to_agent_id=to_agent_id, text=text, created_at=now_iso()))
+            data["rooms"][room_id] = room.model_dump()
+            self._write(data)
+            return room
+
+    def update_board(self, room_id: str, agent_id: str, action: str, text: str, title: str | None) -> Room:
+        with self.lock:
+            data = self._read()
+            room = self._room(data, room_id)
+            if action == "sticky":
+                self._seat_tool(room, agent_id, "sticky_post")
+                if not 1 <= len(text) <= 80:
+                    raise ValueError("sticky text must be 1–80 characters")
+                room.stickies.append(Sticky(id=uuid.uuid4().hex, agent_id=agent_id, text=text, created_at=now_iso()))
+            elif action == "minutes":
+                self._seat_tool(room, agent_id, "minutes_update")
+                room.minutes = text
+            elif action == "clear":
+                room.stickies = []
+            elif action == "whiteboard":
+                if title is None:
+                    raise ValueError("title must be a string")
+                room.whiteboard.append(WhiteboardVersion(id=uuid.uuid4().hex, title=title, html=text, phase=room.meeting_status.phase, created_at=now_iso()))
             data["rooms"][room_id] = room.model_dump()
             self._write(data)
             return room
@@ -472,6 +597,13 @@ class Store:
             data["current_room_id"] = rooms[-1] if rooms else None
         for room_id in data["rooms"].keys():
             room = data["rooms"][room_id]
+            if "seats" not in room:
+                room.update(seats=[s.model_dump() for s in initial_seats()], seat_requests=[], whispers=[], stickies=[], minutes="", whiteboard=[])
+                regular = [a for a in room["agents"] if a["template_id"] != "controller" and a["state"] != "stopped"]
+                if len(regular) > 12:
+                    raise ValueError("cannot migrate room: audience seats full")
+                for seat, agent in zip([s for s in room["seats"] if s["kind"] == "audience"], regular):
+                    seat["agent_id"] = agent["id"]
             if "controller_termination" not in room:
                 room["controller_termination"] = room.get("termination", "")
             if "agent_termination" not in room:
@@ -533,7 +665,7 @@ class Store:
             state=state,
             created_at=now_iso(),
             meeting_status=meeting_status(self._room_state_label(state), goal, "", "", None),
-            agents=[],
+            agents=[], seats=initial_seats(), seat_requests=[], whispers=[], stickies=[], minutes="", whiteboard=[],
         )
 
     def _room_state_event_type(self, state: RoomState) -> str:

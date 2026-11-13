@@ -12,6 +12,12 @@ def write_room_agents(data_dir: Path, room_id: str, agents: list[AgentInstance])
     state_path = data_dir / "state.json"
     data = json.loads(state_path.read_text(encoding="utf-8"))
     data["rooms"][room_id]["agents"] = [agent.model_dump() for agent in agents]
+    # Existing floor tests explicitly place participants in discussion seats.
+    seats = data["rooms"][room_id]["seats"]
+    for seat in seats:
+        seat["agent_id"] = None
+    for seat, agent in zip([s for s in seats if s["kind"] == "discussion"], [a for a in agents if a.template_id != "controller"]):
+        seat["agent_id"] = agent.id
     state_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

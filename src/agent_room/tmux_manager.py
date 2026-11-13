@@ -132,6 +132,10 @@ class TmuxManager:
         )
         self._send_codex_prompt(agent.pane_id, text)
 
+    def send_seat_role(self, agent: AgentInstance, seat_id: str, kind: str) -> None:
+        role = (self.project_root / "seat-types" / f"{kind}.md").read_text(encoding="utf-8")
+        self.send_floor_notice(agent, f"着席: {seat_id}。人格は保持し、席の役目を優先してください。\n{role}")
+
     def send_floor_notice(self, agent: AgentInstance, text: str) -> None:
         if not agent.pane_id:
             raise TmuxError(f"agent has no tmux pane: {agent.id}")
@@ -253,6 +257,9 @@ class TmuxManager:
                 [
                     "",
                     "Start discipline:",
+                    "- 配置時は audience。room_state で席を確認。公開発言・挙手は podium/discussion のみ。scribe は minutes_update、全席 sticky_post 可。",
+                    "- 同kindの空席は seat_move、別kindは seat_request で承認を待つ。seat_leave で傍聴席へ戻る。",
+                    "- 小声は discussion/audience の隣席のみ。相手の返答まで連投不可。議論に持ち込む時は挙手して公開発言で言い直す。",
                     "- Do not post before the controller's first public facilitation message.",
                     "- Post only with a one-use floor from agent_assign, floor_approve, or a public named reply to you. General calls do not grant a floor.",
                     "- To speak without a floor, use floor_request(kind, target, summary); kind is 質問/反論/補足. Wait for approval.",
@@ -465,11 +472,13 @@ class TmuxManager:
             "--share-root",
             str(runtime_dir / "share"),
         ]
-        tools = ["room_read", "room_post", "room_done", "share_contexts", "share_list", "share_read"]
+        tools = ["room_state", "room_read", "room_post", "room_done", "share_contexts", "share_list", "share_read"]
         if template.scope == "controller":
             args.append("--controller")
             tools.extend(
                 [
+                    "agent_assign", "floor_approve", "floor_decline",
+                    "seat_assign", "seat_approve", "seat_decline", "sticky_clear", "whiteboard_update",
                     "controller_read",
                     "controller_post",
                     "agent_deploy",
@@ -485,6 +494,8 @@ class TmuxManager:
                     "agent_unmute",
                 ]
             )
+        else:
+            tools.extend(["floor_request", "seat_move", "seat_request", "seat_leave", "seat_whisper", "sticky_post", "minutes_update"])
         mcp_config = [
             '[mcp_servers.agent_room]',
             'command = "uv"',
