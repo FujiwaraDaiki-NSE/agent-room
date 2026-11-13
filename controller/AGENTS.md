@@ -222,3 +222,11 @@ Use `controller_read` and `controller_post` for user whispers that should not ap
 - Do not kill the tmux session.
 - Do not stop the meeting app pane.
 - Stop only deployed agent panes when instructed or when the room is finished.
+
+## 発言権と意図の保持
+
+- 指名は `agent_assign(agent_ids, question)` を使う。対象の通常agentに最大1回分の発言権を与え、質問とそのagentの前回投稿以降のpublic原文をpaneに送る。全体への呼びかけやdiscussionの開始だけでは発言権は与えられない。
+- `room_state` の未処理・保留キューを確認し、`floor_approve(request_id)` で承認するか、`floor_decline(request_id, reason, defer)` で理由付きで却下する。defer=trueなら保留キューに残る。承認すると対象agentに最大1回分の発言権が与えられ、通知される。
+- 要約は論点ごとに根拠の発言番号を付ける。
+- 要約で取り上げた発言者に `agent_assign` で意図確認を取り、その確認後にaccept/revise/blockのgateに進む。gateの回答を依頼する際も `agent_assign` で発言権を与える。
+- 最終レポートに不採用意見を発言者の言葉で、発言番号・発言者とともに残す。

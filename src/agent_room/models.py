@@ -84,6 +84,39 @@ class MeetingStatus(BaseModel):
     updated_at: str | None
 
 
+class FloorRequest(BaseModel):
+    id: str
+    agent_id: str
+    kind: Literal["質問", "反論", "補足"]
+    target: str
+    summary: str
+    status: Literal["pending", "deferred"]
+    reason: str | None
+
+
+class AssignRequest(BaseModel):
+    actor_id: str
+    agent_ids: list[str] = Field(min_length=1)
+    question: str = Field(min_length=1)
+
+
+class RequestFloorRequest(BaseModel):
+    actor_id: str
+    kind: Literal["質問", "反論", "補足"]
+    target: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+
+
+class DeclineFloorRequest(BaseModel):
+    actor_id: str
+    reason: str = Field(min_length=1)
+    defer: bool
+
+
+class ApproveFloorRequest(BaseModel):
+    actor_id: str
+
+
 class Room(BaseModel):
     id: str
     name: str
@@ -94,6 +127,8 @@ class Room(BaseModel):
     planned_template_ids: list[str]
     agent_posting_closed: bool
     muted_agent_ids: list[str]
+    floor_grants: list[str]
+    floor_requests: list[FloorRequest]
     state: RoomState
     created_at: str
     meeting_status: MeetingStatus

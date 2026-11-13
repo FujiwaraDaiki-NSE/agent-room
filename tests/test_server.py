@@ -568,7 +568,8 @@ def test_closed_discussion_blocks_regular_agent_posts_but_allows_controller_and_
     assert user_response.status_code == 200
 
 
-def test_agent_mute_blocks_only_target_agent(tmp_path) -> None:
+def test_agent_mute_blocks_only_target_agent(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(TmuxManager, "_send_codex_prompt", lambda *args: None)
     auth_file = tmp_path / "auth.json"
     auth_file.write_text("{}", encoding="utf-8")
     client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
@@ -598,6 +599,11 @@ def test_agent_mute_blocks_only_target_agent(tmp_path) -> None:
         json={"actor_id": "controller-1", "reason": "start contributions"},
     )
     assert open_response.status_code == 200
+    assigned = client.post(
+        f"/api/rooms/{room['id']}/assign",
+        json={"actor_id": "controller-1", "agent_ids": ["critic-1", "builder-1"], "question": "Status?"},
+    )
+    assert assigned.status_code == 200
 
     mute_response = client.post(
         f"/api/rooms/{room['id']}/agents/critic-1/mute",
@@ -859,3 +865,137 @@ def test_deploy_requires_tmux(tmp_path, monkeypatch) -> None:
 
     assert response.status_code == 400
     assert "inside tmux" in response.json()["detail"]
+
+
+def floor_room(tmp_path, monkeypatch):
+    notices = []
+    monkeypatch.setattr(TmuxManager, "_send_codex_prompt", lambda self, pane, text: notices.append((pane, text)))
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+    room = client.get("/api/rooms").json()[0]
+    write_room_agents(tmp_path, room["id"], [
+        agent_instance("controller-1", "controller", "active", "%1"),
+        agent_instance("critic-1", "critic", "active", "%2"),
+        agent_instance("builder-1", "builder", "active", "%3"),
+    ])
+    return client, f"/api/rooms/{room['id']}", notices
+
+
+def public_post(client, base, actor_id, text, actor_type="agent"):
+    return client.post(base + "/messages", json={
+        "actor_type": actor_type, "actor_id": actor_id, "actor_name": actor_id,
+        "text": text, "kind": "message",
+    })
+
+
+def test_floor_assignment_original_context_and_single_use(tmp_path, monkeypatch):
+    client, base, notices = floor_room(tmp_path, monkeypatch)
+    assert public_post(client, base, "critic-1", "Unassigned").status_code == 400
+    # Actor labels cannot bypass the floor for a known regular agent.
+    assert public_post(client, base, "critic-1", "Bypass", "controller").status_code == 400
+    first = public_post(client, base, "user", "First original", "user").json()
+    assigned = client.post(base + "/assign", json={
+        "actor_id": "controller-1", "agent_ids": ["critic-1", "builder-1"], "question": "What do you think?",
+    })
+    assert assigned.status_code == 200
+    assert len(notices) == 2
+    assert "What do you think?" in notices[0][1]
+    assert f"#{first['id']} user (user)\nFirst original" in notices[0][1]
+    assert public_post(client, base, "critic-1", "First answer").status_code == 200
+    assert public_post(client, base, "critic-1", "Second answer").status_code == 400
+    recent = public_post(client, base, "builder-1", "Recent original").json()
+    # Private whispers must never appear in assignment context.
+    client.post(base + "/controller/messages", json={
+        "actor_type": "controller", "actor_id": "controller-1", "actor_name": "Controller",
+        "text": "Private secret", "kind": "message",
+    })
+    client.post(base + "/assign", json={
+        "actor_id": "controller-1", "agent_ids": ["critic-1"], "question": "Confirm intent",
+    })
+    prompt = notices[-1][1]
+    assert f"#{recent['id']} builder-1 (builder-1)\nRecent original" in prompt
+    assert "First original" not in prompt
+    assert "First answer" not in prompt
+    assert "Private secret" not in prompt
+    # Closing discussion blocks without consuming the grant.
+    client.post(base + "/discussion/close", json={"actor_id": "controller-1", "reason": "pause"})
+    assert public_post(client, base, "critic-1", "Closed").status_code == 400
+    client.post(base + "/discussion/open", json={"actor_id": "controller-1", "reason": "resume"})
+    assert public_post(client, base, "critic-1", "Resumed").status_code == 200
+    assert len(client.get(base + "/messages").json()) == 4
+
+
+def test_floor_request_defer_approve_decline_and_permissions(tmp_path, monkeypatch):
+    client, base, notices = floor_room(tmp_path, monkeypatch)
+    payload = {"actor_id": "critic-1", "kind": "反論", "target": "Builder", "summary": "Assumption needs evidence."}
+    response = client.post(base + "/floor/requests", json=payload)
+    assert response.status_code == 200
+    request_id = response.json()["floor_requests"][0]["id"]
+    path = base + f"/floor/requests/{request_id}"
+    assert client.post(base + "/floor/requests", json=payload).status_code == 400
+    assert public_post(client, base, "critic-1", "Not approved").status_code == 400
+    assert client.post(path + "/approve", json={"actor_id": "builder-1"}).status_code == 400
+    deferred = client.post(path + "/decline", json={"actor_id": "controller-1", "reason": "Later", "defer": True})
+    assert deferred.json()["floor_requests"][0]["status"] == "deferred"
+    assert deferred.json()["floor_requests"][0]["reason"] == "Later"
+    assert client.post(base + "/floor/requests", json=payload).status_code == 400
+    # Room state persists pending/deferred entries across application reload.
+    reloaded = TestClient(create_app(Path.cwd(), tmp_path, tmp_path / "auth.json"))
+    assert reloaded.get(base).json()["floor_requests"] == deferred.json()["floor_requests"]
+    assert public_post(client, base, "critic-1", "Deferred").status_code == 400
+    approved = client.post(path + "/approve", json={"actor_id": "controller-1"})
+    assert approved.status_code == 200
+    assert approved.json()["floor_requests"] == []
+    assert notices[-1][0] == "%2" and request_id in notices[-1][1]
+    assert public_post(client, base, "critic-1", "Approved").status_code == 200
+    assert public_post(client, base, "critic-1", "Again").status_code == 400
+    assert client.post(path + "/approve", json={"actor_id": "controller-1"}).status_code == 400
+    second = client.post(base + "/floor/requests", json=payload).json()["floor_requests"][0]["id"]
+    declined = client.post(base + f"/floor/requests/{second}/decline", json={
+        "actor_id": "controller-1", "reason": "Outside scope", "defer": False,
+    })
+    assert declined.json()["floor_requests"] == []
+    assert public_post(client, base, "critic-1", "Declined").status_code == 400
+    assert client.post(base + "/assign", json={"actor_id": "critic-1", "agent_ids": ["critic-1"], "question": "Self assign"}).status_code == 400
+    assert client.post(base + "/assign", json={"actor_id": "controller-1", "agent_ids": ["controller-1"], "question": "Controller"}).status_code == 400
+    assert client.post(base + "/floor/requests", json=payload | {"actor_id": "controller-1"}).status_code == 400
+    assert client.post(base + "/floor/requests", json=payload | {"kind": "Other"}).status_code == 422
+    assert client.post(base + "/floor/requests", json=payload | {"summary": "  "}).status_code == 400
+
+
+def test_named_reply_grants_only_the_named_regular_agent(tmp_path, monkeypatch):
+    client, base, notices = floor_room(tmp_path, monkeypatch)
+    assert public_post(client, base, "user", "宛先: 全体\nEveryone", "user").status_code == 200
+    assert public_post(client, base, "critic-1", "No floor").status_code == 400
+    assert public_post(client, base, "user", "Context\n宛先: Critic", "user").status_code == 200
+    assert public_post(client, base, "critic-1", "Still no floor").status_code == 400
+    assert public_post(client, base, "user", "宛先: Critic\nQuestion", "user").status_code == 200
+    assert public_post(client, base, "builder-1", "Not named").status_code == 400
+    assert public_post(client, base, "critic-1", "宛先: Builder\nAnswer and question").status_code == 200
+    assert public_post(client, base, "critic-1", "Again").status_code == 400
+    assert public_post(client, base, "builder-1", "宛先: Builder\nNo self renewal").status_code == 200
+    assert public_post(client, base, "builder-1", "Again").status_code == 400
+    assert public_post(client, base, "user", "宛先: Controller\nController question", "user").status_code == 200
+    assert client.get(base).json()["floor_grants"] == []
+    assert notices == []
+
+
+def test_repeated_floor_grants_allow_only_one_post(tmp_path, monkeypatch):
+    client, base, _ = floor_room(tmp_path, monkeypatch)
+    assignment = {"actor_id": "controller-1", "agent_ids": ["critic-1"], "question": "Your view?"}
+    for _ in range(2):
+        assert client.post(base + "/assign", json=assignment).status_code == 200
+    assert client.get(base).json()["floor_grants"] == ["critic-1"]
+    assert public_post(client, base, "critic-1", "Answer").status_code == 200
+    assert public_post(client, base, "critic-1", "Again").status_code == 400
+
+    for _ in range(2):
+        assert public_post(client, base, "user", "宛先: Critic\nQuestion", "user").status_code == 200
+    request = client.post(base + "/floor/requests", json={
+        "actor_id": "critic-1", "kind": "補足", "target": "全体", "summary": "Additional context.",
+    }).json()["floor_requests"][0]
+    assert client.post(base + f"/floor/requests/{request['id']}/approve", json={"actor_id": "controller-1"}).status_code == 200
+    assert client.get(base).json()["floor_grants"] == ["critic-1"]
+    assert public_post(client, base, "critic-1", "Reply").status_code == 200
+    assert public_post(client, base, "critic-1", "Again").status_code == 400
