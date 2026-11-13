@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 
 from .models import AgentInstance, AgentTemplate, Room
+from .share import validate_paths
 
 
 class TmuxError(RuntimeError):
@@ -197,12 +198,12 @@ class TmuxManager:
             "- room_state: read floor grants and the pending/deferred hand queue",
             "- room_post: post a public room message",
             "- room_done: mark yourself done",
-            "- share_contexts: list selected shared context names",
-            "- share_list: list files and directories in selected shared context",
-            "- share_read: read a text file from selected shared context",
+            "- share_contexts: list selected handout paths",
+            '- share_list(path): list a shared directory using its share/-relative path, e.g. share_list("ThinkLab/notes")',
+            '- share_read(path): read a shared text file using its share/-relative path, e.g. share_read("design_db/docs/spec.md")',
             "",
             "For shared context discovery, prefer share_contexts and share_list.",
-            "Shared context directories are symbolic links to shared sources, so shell tools can inspect ./share directly.",
+            "Selected handout files and directories are symbolic links to shared sources, so shell tools can inspect ./share directly.",
             "",
             "Speak to the meeting only through the Agent Room MCP tools.",
             "Do not call the Agent Room HTTP API or CLI commands directly.",
@@ -271,8 +272,8 @@ class TmuxManager:
 
     def _share_context_lines(self, share_contexts: list[str]) -> list[str]:
         lines = [
-            "Shared Context:",
-            "Read selected shared context directories under ./share.",
+            "Handouts (selected paths):",
+            "Read selected handout files and directories under ./share.",
         ]
         if share_contexts:
             lines.extend(f"- ./share/{name}" for name in share_contexts)
@@ -401,20 +402,30 @@ class TmuxManager:
         target.symlink_to(self.codex_auth_file)
 
     def _link_share_contexts(self, runtime_dir: Path, share_contexts: list[str]) -> None:
-        if not self.share_root.is_dir():
-            raise TmuxError(f"share directory not found: {self.share_root}")
+        validate_paths(self.share_root, share_contexts)
         runtime_share = runtime_dir / "share"
-        if runtime_share.exists() or runtime_share.is_symlink():
-            raise TmuxError(f"runtime share path already exists: {runtime_share}")
-        runtime_share.mkdir()
+        if runtime_share.is_symlink():
+            raise TmuxError("runtime share must be a real directory")
+        runtime_share.mkdir(exist_ok=True)
+        def remove_links(directory):
+            removed = False
+            for entry in directory.iterdir():
+                if entry.is_symlink():
+                    entry.unlink()
+                    removed = True
+                elif entry.is_dir():
+                    child_removed = remove_links(entry)
+                    if child_removed and not any(entry.iterdir()):
+                        entry.rmdir()
+                    removed = removed or child_removed
+            return removed
+        remove_links(runtime_share)
         for name in share_contexts:
-            if not name or name in {".", ".."} or Path(name).name != name:
-                raise TmuxError(f"share context must be a directory name: {name}")
-            source = self.share_root / name
-            if source.is_symlink() or not source.is_dir():
-                raise TmuxError(f"share context not found: {name}")
             target = runtime_share / name
-            target.symlink_to(source.resolve(), target_is_directory=True)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                raise TmuxError(f"runtime share path already exists: {target}")
+            target.symlink_to((self.share_root / name).resolve(), target_is_directory=(self.share_root / name).is_dir())
 
     def _trust_project(self, runtime_dir: Path) -> None:
         config_path = runtime_dir / ".codex" / "config.toml"

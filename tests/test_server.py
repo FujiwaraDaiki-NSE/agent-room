@@ -274,7 +274,7 @@ def test_room_rejects_unknown_share_context(tmp_path) -> None:
     )
 
     assert response.status_code == 400
-    assert "share context not found: missing" in response.json()["detail"]
+    assert "share path outside root or missing: missing" in response.json()["detail"]
 
 
 def test_controller_private_messages_are_separate(tmp_path, monkeypatch) -> None:

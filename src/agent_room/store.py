@@ -140,6 +140,25 @@ class Store:
             self._write(data)
         return room
 
+    def update_share(self, room_id: str, paths: list[str]) -> Room:
+        with self.lock:
+            data = self._read()
+            room = self._room(data, room_id)
+            room.share_contexts = paths
+            data["rooms"][room_id] = room.model_dump()
+            self._append_event(data, room_id, "share.updated", "user", None, None, {"paths": paths})
+            self._write(data)
+            return room
+
+    def record_share_access(self, room_id: str, actor_id: str, path: str, operation: str) -> None:
+        with self.lock:
+            data = self._read()
+            room = self._room(data, room_id)
+            if not any(agent.id == actor_id for agent in room.agents):
+                raise ValueError("agent not found")
+            self._append_event(data, room_id, "share.accessed", actor_id, path, None, {"path": path, "operation": operation})
+            self._write(data)
+
     def update_meeting_status(
         self,
         room_id: str,

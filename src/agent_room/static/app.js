@@ -2,6 +2,10 @@ const state = {
   templates: [],
   teams: [],
   shareContexts: [],
+  shareSelection: null,
+  shareTree: new Map(),
+  handoutPath: null,
+  handoutContent: null,
   tmux: null,
   room: null,
   messages: [],
@@ -113,6 +117,12 @@ async function boot() {
   $("openWhiteboard").onclick = () => openDocument("whiteboard");
   $("openMinutes").onclick = () => openDocument("minutes");
   $("closeDrawer").onclick = closeDocument;
+  $("openHandouts").onclick = () => { state.handoutPath = null; state.handoutContent = null; openDocument("handouts"); };
+  $("saveShare").onclick = () => runAction("配布資料の保存", async () => {
+    state.room = await api(`/api/rooms/${state.room.id}/share`, {method:"PUT", body:JSON.stringify({paths:state.shareSelection})});
+    $("shareStatus").textContent = "保存しました";
+    await loadRoom();
+  });
   document.addEventListener("keydown", event => {
     if (event.key === "Escape") closeDocument();
     if (event.key === "Tab" && state.documentView) {
@@ -166,7 +176,7 @@ async function refresh() {
   const [templates, teams, shareContexts, tmux] = await Promise.all([
     api("/api/templates"),
     api("/api/teams"),
-    api("/api/share/contexts"),
+    api("/api/share/tree"),
     api("/api/tmux"),
   ]);
   state.templates = templates;
@@ -175,7 +185,6 @@ async function refresh() {
   state.tmux = tmux;
   renderTemplates();
   renderTeams();
-  renderShareContexts();
   renderDeploy();
   renderTmux();
   const rooms = await api("/api/rooms");
@@ -198,6 +207,7 @@ async function resetRoom() {
       force: false,
     }),
   });
+  state.shareSelection = null;
   state.messages = [];
   state.controllerMessages = [];
   state.events = [];
@@ -233,6 +243,7 @@ async function loadRoom() {
     return;
   }
   state.room = await api(`/api/rooms/${state.room.id}`);
+  if (state.room.state !== "draft") state.shareSelection = [...state.room.share_contexts];
   syncRoomForm();
   [state.messages, state.controllerMessages, state.events] = await Promise.all([
     api(`/api/rooms/${state.room.id}/messages`),
@@ -285,6 +296,7 @@ function connectRoom() {
   state.ws.onclose = renderControls;
   state.ws.onmessage = async (event) => {
     const payload = JSON.parse(event.data);
+    if (payload.type === "share.accessed" || payload.type === "share.updated") { await loadRoom(); return; }
     if (payload.message && payload.type !== "whisper.created") {
       state.messages.push(payload.message);
       showBubble(payload.message);
@@ -294,6 +306,7 @@ function connectRoom() {
     }
     if (payload.type === "room.reset" && payload.room) {
       state.room = payload.room;
+      state.shareSelection = null;
       state.messages = [];
       state.controllerMessages = [];
       state.events = [];
@@ -436,22 +449,48 @@ function renderTeams() {
   syncTeamChecksFromTemplates();
 }
 
+function formatFileSize(bytes) {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) { value /= 1000; unit++; }
+  return `${unit === 0 ? value : value.toFixed(1)} ${units[unit]}`;
+}
+
 function renderShareContexts() {
-  const selected = new Set(state.room && state.room.share_contexts ? state.room.share_contexts : []);
-  if (!state.shareContexts.length) {
-    $("shareContextList").innerHTML = `<div class="emptyState">共有文脈なし</div>`;
-    return;
+  if (state.shareSelection === null) state.shareSelection = state.room ? [...state.room.share_contexts] : [];
+  const container = $("shareContextList"); container.replaceChildren();
+  const chips = document.createElement("div"); chips.className = "shareChips";
+  state.shareSelection.forEach(path => {
+    const button = document.createElement("button"); button.type = "button";
+    button.textContent = path + " ×"; button.setAttribute("aria-label", path + " を外す");
+    button.onclick = () => { state.shareSelection = state.shareSelection.filter(p => p !== path); renderShareContexts(); };
+    chips.append(button);
+  }); container.append(chips);
+  function branch(items, parent) {
+    items.forEach(item => {
+      const row = document.createElement("div"); row.className = "shareRow";
+      const path = item.relative_path;
+      const check = document.createElement("input"); check.type = "checkbox"; check.checked = state.shareSelection.includes(path);
+      check.setAttribute("aria-label", path + " を選択");
+      check.disabled = state.shareSelection.some(p => p !== path && (path.startsWith(p + "/") || p.startsWith(path + "/")));
+      check.onchange = () => { state.shareSelection = check.checked ? [...state.shareSelection, path] : state.shareSelection.filter(p => p !== path); renderShareContexts(); };
+      row.append(check);
+      const label = document.createElement("button"); label.type = "button";
+      label.textContent = `${item.type === "dir" ? "▸ " : ""}${item.name} · ${item.type === "dir" ? item.count + " 項目" : formatFileSize(item.size)}`;
+      row.append(label); parent.append(row);
+      if (item.type === "dir") {
+        label.setAttribute("aria-expanded", String(state.shareTree.has(path)));
+        label.onclick = async () => {
+          try { if (state.shareTree.has(path)) state.shareTree.delete(path); else state.shareTree.set(path, await api(`/api/share/tree?path=${encodeURIComponent(path)}`)); renderShareContexts(); }
+          catch (error) { $("shareStatus").textContent = error.message; }
+        };
+        if (state.shareTree.has(path)) { const nested = document.createElement("div"); nested.className = "shareBranch"; parent.append(nested); branch(state.shareTree.get(path), nested); }
+      } else label.onclick = () => check.click();
+    });
   }
-  $("shareContextList").innerHTML = state.shareContexts
-    .map(
-      (context) => `
-        <label class="contextOption">
-          <input data-share-context-check type="checkbox" value="${escapeHtml(context.name)}" ${selected.has(context.name) ? "checked" : ""} />
-          <span>${escapeHtml(context.name)}</span>
-        </label>
-      `,
-    )
-    .join("");
+  branch(state.shareContexts, container);
+  $("saveShare").hidden = !state.room || state.room.state === "draft";
 }
 
 function renderDeploy() {
@@ -650,6 +689,7 @@ function renderControls() {
     room && $("goal").value.trim() && $("controllerTermination").value.trim() && $("agentTermination").value.trim(),
   );
   const pending = Boolean(state.pendingAction);
+  $("saveShare").disabled = pending;
   $("startRoom").disabled = !isDraft || !hasRequiredInput || pending;
   $("deployAgent").disabled = !isOpen || pending || !state.tmux || !state.tmux.inside_tmux || !$("deployTemplate").value;
   $("closeRoom").disabled = !isOpen || pending;
@@ -825,6 +865,7 @@ function renderDocuments() {
   }
   $("boardStickies").innerHTML = (state.room ? state.room.stickies : []).map(sticky => `<span title="${escapeHtml(sticky.text)}">${escapeHtml(sticky.text)}</span>`).join("");
   if (!state.documentView) return;
+  if (state.documentView === "handouts") { renderHandouts(); return; }
   $("drawerTitle").textContent = state.documentView === "minutes" ? "議事メモ" : "ホワイトボード";
   const history = $("documentHistory"); const body = $("documentBody");
   if (state.documentView === "minutes") {
@@ -852,13 +893,15 @@ function renderDocuments() {
   }
 }
 function openDocument(view) {
+  $("handoutPickerSlot").append($("handoutPicker"));
   state.documentView = view; state.whiteboardVersion = null;
   $("documentDrawer").hidden = false; renderDocuments(); $("closeDrawer").focus();
 }
 function closeDocument() {
   if (!state.documentView) return;
+  $("handoutPickerSlot").append($("handoutPicker"));
   const view = state.documentView; state.documentView = null; $("documentDrawer").hidden = true;
-  $(view === "minutes" ? "openMinutes" : "openWhiteboard").focus();
+  $(view === "handouts" ? "openHandouts" : view === "minutes" ? "openMinutes" : "openWhiteboard").focus();
 }
 function showWhisper(whisper) {
   if (state.whispers.has(whisper.id)) return;
@@ -1032,7 +1075,7 @@ function isMuted(agent) {
 }
 
 function selectedShareContexts() {
-  return [...document.querySelectorAll("[data-share-context-check]:checked")].map((input) => input.value);
+  return [...state.shareSelection];
 }
 
 function selectedTeamTemplateIds() {
@@ -1353,3 +1396,36 @@ function escapeHtml(value) {
 boot().catch((error) => {
   setStatus(error.message, true);
 });
+
+async function showHandout(path) {
+  try {
+    const content = await api(`/api/rooms/${state.room.id}/share/content?path=${encodeURIComponent(path)}`);
+    state.handoutPath = path; state.handoutContent = content; renderHandouts();
+  } catch (error) { $("documentBody").textContent = error.message; }
+}
+function renderHandouts() {
+  $("drawerTitle").textContent = "配布資料";
+  const history = $("documentHistory"); history.replaceChildren();
+  const body = $("documentBody"); body.className = "handoutBody";
+  const picker = $("handoutPicker");
+  body.replaceChildren();
+  body.append(picker);
+  function entry(path, label) {
+    const wrapper = document.createElement("div"); wrapper.className = "handoutEntry";
+    const button = document.createElement("button"); button.type = "button"; button.textContent = label; button.onclick = () => showHandout(path); wrapper.append(button);
+    const accesses = state.events.filter(e => e.type === "share.accessed" && (e.payload.path === path || e.payload.path.startsWith(path + "/")));
+    const readers = document.createElement("small");
+    readers.textContent = accesses.length ? accesses.map(e => `${state.room.agents.find(a => a.id === e.actor_id)?.name || e.actor_id} · ${e.payload.operation === "read" ? "閲覧" : "一覧"} · ${new Date(e.created_at).toLocaleString()}`).join(" / ") : "参照履歴なし";
+    wrapper.append(readers); body.append(wrapper);
+  }
+  state.room.share_contexts.forEach(path => entry(path, path));
+  if (!state.room.share_contexts.length) body.textContent = "配布資料はありません";
+  if (state.handoutContent && state.room.share_contexts.some(p => state.handoutPath === p || state.handoutPath.startsWith(p + "/"))) {
+    const title = document.createElement("h3"); title.textContent = state.handoutPath; body.append(title);
+    if (state.handoutContent.type === "dir") state.handoutContent.items.forEach(item => entry(item.relative_path, `${item.type === "dir" ? "▸ " : ""}${item.name}`));
+    else {
+      const note = document.createElement("p"); note.textContent = state.handoutContent.binary ? "バイナリファイルは表示できません" : state.handoutContent.truncated ? `先頭 ${formatFileSize(60000)} のみ表示（全体 ${formatFileSize(state.handoutContent.bytes)}）` : formatFileSize(state.handoutContent.bytes); body.append(note);
+      const pre = document.createElement("pre"); pre.textContent = state.handoutContent.content; body.append(pre);
+    }
+  }
+}

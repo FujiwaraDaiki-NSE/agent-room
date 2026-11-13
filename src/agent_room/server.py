@@ -22,6 +22,8 @@ from .models import (
     UpdateAgentConfigRequest,
     UpdateMeetingStatusRequest,
 )
+from .share import validate_paths, selected_path, list_path, read_path
+from .models import UpdateShareRequest, ShareAccessRequest
 from .store import Store
 from .templates import TeamRegistry, TemplateError, TemplateRegistry
 from .tmux_manager import TmuxError, TmuxManager
@@ -104,6 +106,59 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
         except ValueError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+    @app.get("/api/share/tree")
+    def share_tree(path: str = "") -> list[dict]:
+        try:
+            return list_path(share_root, path)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.put("/api/rooms/{room_id}/share")
+    async def update_share(room_id: str, request: UpdateShareRequest) -> dict:
+        try:
+            paths = validate_paths(share_root, request.paths)
+            room = store.get_room(room_id)
+            added = sorted(set(paths) - set(room.share_contexts))
+            removed = sorted(set(room.share_contexts) - set(paths))
+            active = [a for a in room.agents if a.state != "stopped"]
+            for agent in active:
+                tmux._link_share_contexts(tmux._agent_runtime_dir(agent), paths)
+            room = store.update_share(room_id, paths)
+            for agent in active:
+                if agent.pane_id:
+                    tmux._send_codex_prompt(agent.pane_id, f"配布資料が更新されました。追加: {added}、削除: {removed}。share_contexts で現在の共有パスを確認してください。")
+            await hub.broadcast(room_id, {"type": "share.updated", "room": room.model_dump()})
+            return room.model_dump()
+        except (ValueError, OSError, KeyError, TmuxError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get("/api/rooms/{room_id}/share/content")
+    def share_content(room_id: str, path: str) -> dict:
+        try:
+            target = selected_path(share_root, store.get_room(room_id).share_contexts, path)
+            if target.is_dir():
+                return {"type": "dir", "items": [item for item in list_path(share_root, path) if _allowed_item(room_id, item["relative_path"])]}
+            return {"type": "file", **read_path(target)}
+        except (ValueError, OSError, KeyError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    def _allowed_item(room_id: str, path: str) -> bool:
+        try:
+            selected_path(share_root, store.get_room(room_id).share_contexts, path)
+            return True
+        except ValueError:
+            return False
+
+    @app.post("/api/rooms/{room_id}/share/access")
+    async def share_access(room_id: str, request: ShareAccessRequest) -> dict:
+        try:
+            selected_path(share_root, store.get_room(room_id).share_contexts, request.path)
+            store.record_share_access(room_id, request.actor_id, request.path, request.operation)
+            await hub.broadcast(room_id, {"type": "share.accessed"})
+            return {"ok": True}
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @app.get("/api/rooms")
     def list_rooms() -> list[dict[str, Any]]:
         return [room.model_dump() for room in store.list_rooms()]
@@ -112,8 +167,8 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
     async def create_room(request: CreateRoomRequest) -> dict[str, Any]:
         try:
             current = store.current_room()
-            _stop_room_panes(current.id, "user", "room restart", False, False)
             share_contexts = _validate_share_contexts(request.share_contexts)
+            _stop_room_panes(current.id, "user", "room restart", False, False)
             selected_template_ids = _selected_template_ids(request.templates, request.teams)
             planned_template_ids = _planned_template_ids(selected_template_ids)
             room = store.create_room(
@@ -717,12 +772,6 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
         return contexts
 
     def _validate_share_contexts(names: list[str]) -> list[str]:
-        if len(names) != len(set(names)):
-            raise ValueError("share contexts must be unique")
-        available = {context["name"] for context in _share_contexts()}
-        for name in names:
-            if name not in available:
-                raise ValueError(f"share context not found: {name}")
-        return names
+        return validate_paths(share_root, names)
 
     return app

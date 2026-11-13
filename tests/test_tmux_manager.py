@@ -303,6 +303,9 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "Agent Room MCP tools" in controller_prompt
     assert "share_contexts" in controller_prompt
     assert "share_list" in controller_prompt
+    assert 'share_read("design_db/docs/spec.md")' in controller_prompt
+    assert 'share_list("ThinkLab/notes")' in controller_prompt
+    assert 'relative_path=' not in controller_prompt
     assert "share_read" in controller_prompt
     assert "Room communication rules:" in controller_prompt
     assert "`宛先: 全体` or `宛先: <相手名>`" in controller_prompt

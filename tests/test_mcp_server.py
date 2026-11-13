@@ -72,24 +72,29 @@ async def test_share_mcp_tools_read_selected_context(tmp_path) -> None:
     )
 
     async with Client(mcp) as client:
+        schemas = {tool.name: tool.inputSchema for tool in await client.list_tools()}
+        for name in ("share_list", "share_read"):
+            assert schemas[name]["required"] == ["path"]
+            assert set(schemas[name]["properties"]) == {"path"}
         contexts = await client.call_tool("share_contexts", {})
         for tool_name in ("share_list", "share_read"):
             for relative_path in ("..", "../secret.txt", "escape/secret.txt", str(tmp_path / "share" / "secret.txt")):
                 with pytest.raises(ToolError, match="must stay inside the selected context"):
-                    await client.call_tool(tool_name, {"context_name": "alpha", "relative_path": relative_path})
+                    await client.call_tool(tool_name, {"path": relative_path if Path(relative_path).is_absolute() else f"alpha/{relative_path}"})
         (context / "escape").unlink()
-        items = await client.call_tool("share_list", {"context_name": "alpha", "relative_path": "."})
-        content = await client.call_tool("share_read", {"context_name": "alpha", "relative_path": "README.md"})
+        items = await client.call_tool("share_list", {"path": "alpha"})
+        content = await client.call_tool("share_read", {"path": "alpha/README.md"})
 
     assert contexts.data == ["alpha"]
     assert items.data == [
         {
             "name": "README.md",
-            "relative_path": "README.md",
+            "relative_path": "alpha/README.md",
             "type": "file",
             "size": len("Alpha context\n"),
         }
     ]
+    assert content.data["path"] == "alpha/README.md"
     assert content.data["content"] == "Alpha context\n"
     assert content.data["truncated"] is False
 
@@ -225,3 +230,25 @@ async def test_floor_tools_route_payloads_and_room_state():
         ("POST", "http://server/api/rooms/room-1/floor/requests/request-1/approve", {"actor_id": "controller-1"}),
         ("POST", "http://server/api/rooms/room-1/floor/requests/request-2/decline", {"actor_id": "controller-1", "reason": "Later", "defer": True}),
     ]
+
+
+async def test_selected_file_and_nested_directory_limits_and_history(tmp_path):
+    source = tmp_path / 'source'; source.mkdir()
+    (source / 'spec.md').write_text('仕様')
+    runtime = tmp_path / 'runtime'; (runtime / 'docs').mkdir(parents=True)
+    (runtime / 'docs/spec.md').symlink_to(source / 'spec.md')
+    calls = []
+    def request(method, url, payload):
+        calls.append((method, url, payload))
+        if method == 'GET':
+            return {'share_contexts':['docs/spec.md']}
+        return {'ok':True}
+    mcp = create_agent_room_mcp('http://server', 'r', 'reader', 'Reader', runtime, False, request)
+    async with Client(mcp) as client:
+        result = await client.call_tool('share_read', {'path':'docs/spec.md'})
+        assert result.data['content'] == '仕様'
+        assert calls[-1] == ('POST', 'http://server/api/rooms/r/share/access', {'actor_id':'reader','path':'docs/spec.md','operation':'read'})
+        with pytest.raises(ToolError):
+            await client.call_tool('share_read', {'path':'docs/secret'})
+        with pytest.raises(ToolError):
+            await client.call_tool('share_read', {'path':'docs'})
