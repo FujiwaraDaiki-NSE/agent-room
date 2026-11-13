@@ -172,7 +172,7 @@ h2 {
   min-height: 70px;
   padding: 13px 18px;
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 16px;
 }
@@ -251,6 +251,7 @@ h2 {
 }
 
 .briefItem strong {
+  overflow-wrap: anywhere;
   min-width: 0;
   color: var(--ink);
   font-size: 12px;
@@ -263,6 +264,9 @@ h2 {
 }
 
 .statusLine {
+  overflow-wrap: anywhere;
+  max-height: 5em;
+  overflow-y: auto;
   min-height: 24px;
   padding: 4px 18px 7px;
   color: var(--muted);
@@ -445,6 +449,7 @@ body[data-room-state="open"] .controlPanel textarea {
 }
 
 .statusList {
+  overflow-wrap: anywhere;
   padding-left: 18px;
   display: grid;
   gap: 4px;
@@ -722,6 +727,7 @@ body[data-room-state="open"] .controlPanel textarea {
 }
 
 .agentRoster {
+  align-content: start;
   min-height: 0;
   overflow: auto;
   padding: 10px;
@@ -778,6 +784,8 @@ body[data-room-state="open"] .controlPanel textarea {
 }
 
 .rosterState {
+  flex-wrap: wrap;
+  max-width: 120px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -815,12 +823,14 @@ body[data-room-state="open"] .controlPanel textarea {
 
 .deployBar {
   display: grid;
-  grid-template-columns: minmax(170px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
-  min-width: min(420px, 52%);
+  min-width: 0;
+  width: min(420px, 65%);
 }
 
 .tableWrap {
+  container: seating / inline-size;
   min-height: 0;
   display: grid;
   place-items: center;
@@ -1140,6 +1150,9 @@ body[data-room-state="open"] .controlPanel textarea {
 }
 
 .message {
+  width: 100%;
+  max-width: 76ch;
+  margin-inline: auto;
   flex: 0 0 auto;
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
@@ -1181,6 +1194,7 @@ body[data-room-state="open"] .controlPanel textarea {
 }
 
 .messageMeta {
+  flex-wrap: wrap;
   display: flex;
   min-width: 0;
   align-items: center;
@@ -1195,6 +1209,7 @@ body[data-room-state="open"] .controlPanel textarea {
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
   white-space: nowrap;
 }
 
@@ -1203,6 +1218,9 @@ body[data-room-state="open"] .controlPanel textarea {
 }
 
 .messageTag {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   color: color-mix(in srgb, var(--accent) 70%, var(--ink));
   border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
   background: color-mix(in srgb, var(--accent) 8%, #fff);
@@ -1214,7 +1232,7 @@ body[data-room-state="open"] .controlPanel textarea {
   max-height: none;
   color: #25323f;
   font-size: 14px;
-  line-height: 1.56;
+  line-height: 1.7;
   white-space: normal;
   overflow: visible;
   overflow-wrap: anywhere;
@@ -1264,6 +1282,10 @@ body[data-room-state="open"] .controlPanel textarea {
 }
 
 .messageText pre {
+  min-width: 0;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
   max-width: 100%;
   overflow: auto;
   padding: 9px 10px;
@@ -1338,6 +1360,74 @@ body[data-room-state="open"] .controlPanel textarea {
   text-align: center;
 }
 
+/* Allow panel contents to shrink before wrapping or scrolling. */
+.workspace, .stage, .controlRail, .controlPanel, .meetingStatusPanel,
+.rosterPanel, .roomDeck, .sidebar, .chatPanel, .messages,
+.meetingStatusBody, .agentRoster, .field, .templateCard > span,
+.teamCard > span, .rosterItem > div, .roomToolbar > div, .composer > textarea {
+  min-width: 0;
+}
+
+.templateCard strong, .sectionHead, .transitionHistory strong, .emptyState {
+  overflow-wrap: anywhere;
+}
+
+.sectionHead, .roomToolbar, .actions {
+  flex-wrap: wrap;
+}
+
+.messageText img, .messageText video, .messageText svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.messageText table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* A fixed ring cannot accommodate an arbitrary number of seats. */
+.roundTable:has(.compactSeat) {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: auto;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.roundTable:has(.compactSeat) .tableCore {
+  position: static;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  padding-bottom: 12px;
+}
+
+.roundTable:has(.compactSeat) #agentLayer {
+  position: static;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+  align-content: start;
+  gap: 18px 10px;
+  padding: 8px;
+  overflow: auto;
+}
+
+.roundTable:has(.compactSeat) .seat {
+  position: static;
+  width: 100%;
+  min-width: 0;
+  transform: none;
+}
+
+.roundTable:has(.compactSeat) .bubble {
+  position: static;
+  width: 100%;
+  max-width: 100%;
+}
+
 @media (max-width: 1220px) {
   .workspace {
     display: block;
@@ -1363,9 +1453,76 @@ body[data-room-state="open"] .controlPanel textarea {
   }
 }
 
-@media (max-width: 860px) {
-  .workspace {
+@container seating (max-width: 600px) {
+  .roundTable:has(.seat) {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    aspect-ratio: auto;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .roundTable:has(.seat) .tableCore {
+    position: static;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    padding-bottom: 12px;
+  }
+
+  .roundTable:has(.seat) #agentLayer {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+    align-content: start;
+    gap: 18px 10px;
+    padding: 8px;
     overflow: auto;
+  }
+
+  .roundTable:has(.seat) .seat {
+    position: static;
+    width: 100%;
+    min-width: 0;
+    transform: none;
+  }
+
+  .roundTable:has(.seat) .bubble {
+    position: static;
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 860px) {
+  html, body {
+    height: auto;
+    overflow: auto;
+  }
+
+  .shell {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .masthead {
+    position: static;
+  }
+
+  .workspace {
+    flex: none;
+    height: auto;
+    overflow: auto;
+  }
+
+  .tableWrap {
+    height: 420px;
+  }
+
+  .meetingStatusBody {
+    max-height: 420px;
   }
 
   .stage {
@@ -1451,6 +1608,21 @@ body[data-room-state="open"] .controlPanel textarea {
   .deployBar {
     min-width: 0;
     width: 100%;
+  }
+
+  .message {
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .messageAvatar {
+    width: 30px;
+    height: 30px;
+  }
+
+  .messages {
+    padding: 10px;
   }
 
   .seat {
