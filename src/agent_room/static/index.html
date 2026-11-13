@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Agent Room</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260623-markdown-chat" />
+    <link rel="stylesheet" href="/static/styles.css?v=20261113-seats-whiteboard" />
   </head>
   <body>
     <main class="shell">
@@ -160,9 +160,15 @@
 
             <div class="tableWrap">
               <div class="roundTable">
-                <div class="tableCore">
-                  <span id="tableState">待機</span>
-                </div>
+                <button class="roomBoard" id="openWhiteboard" type="button" aria-label="ホワイトボードを開く">
+                  <div class="boardHeading"><span>WHITEBOARD</span><strong id="boardPhase">下書き</strong></div>
+                  <strong id="boardTitle">ホワイトボード</strong><p id="boardTopic">なし</p>
+                  <div id="boardPreview"></div><div id="boardStickies"></div>
+                </button>
+                <button id="openMinutes" class="scribeDesk" type="button">▤ 書記机<span>議事メモを開く</span></button>
+                <div class="podiumDesk">演台</div><div class="chairDesk">議長</div>
+                <div class="tableCore"><span id="tableState">待機</span></div>
+                <div id="seatLayer"></div><div id="whisperLayer"></div>
                 <div id="agentLayer"></div>
               </div>
             </div>
@@ -204,6 +210,10 @@
         </aside>
       </section>
     </main>
-    <script src="/static/app.js?v=20260623-markdown-chat"></script>
+    <aside id="documentDrawer" class="documentDrawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" hidden>
+      <div class="sidebarHead"><h2 id="drawerTitle"></h2><button id="closeDrawer" type="button" aria-label="サイドバーを閉じる">閉じる ×</button></div>
+      <div id="documentHistory"></div><div id="documentBody"></div>
+    </aside>
+    <script src="/static/app.js?v=20261113-seats-whiteboard"></script>
   </body>
 </html>
