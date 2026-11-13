@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from fastmcp import FastMCP
 
+from .share import EXCLUDED, read_path
+
 
 RequestFn = Callable[[str, str, dict[str, Any] | None], Any]
 
@@ -60,25 +62,21 @@ def create_agent_room_mcp(
 
     def selected_share_contexts() -> list[str]:
         room = call("GET", url(f"/api/rooms/{room_id}"), None)
-        return list(room.get("share_contexts", []))
+        return list(room["share_contexts"])
 
-    def context_root(context_name: str) -> Path:
-        contexts = selected_share_contexts()
-        if context_name not in contexts:
-            raise ValueError(f"share context not selected: {context_name}")
-        if not context_name or context_name in {".", ".."} or Path(context_name).name != context_name:
-            raise ValueError(f"share context must be a directory name: {context_name}")
-        root = (resolved_share_root / context_name).resolve()
-        if not root.is_dir():
-            raise ValueError(f"share context not found: {context_name}")
-        return root
-
-    def context_path(context_name: str, relative_path: str) -> Path:
-        root = context_root(context_name)
-        target = (root / relative_path).resolve()
-        if target != root and root not in target.parents:
+    def handout_path(path: str, selections: list[str]) -> Path:
+        if not path or Path(path).is_absolute() or any(part in {"", ".", ".."} | EXCLUDED for part in path.split("/")):
             raise ValueError("share path must stay inside the selected context")
-        return target
+        for selected in selections:
+            if path != selected and not path.startswith(selected + "/"):
+                continue
+            root = (resolved_share_root / selected).resolve()
+            target = (resolved_share_root / path).resolve()
+            if (target == root or root.is_dir() and target.is_relative_to(root)) and target.exists():
+                if target != root and any(part in EXCLUDED for part in target.relative_to(root).parts):
+                    raise ValueError("excluded share directory")
+                return target
+        raise ValueError("share path must stay inside the selected context")
 
     @mcp.tool
     def room_read(after_id: int | None = None) -> list[dict[str, Any]]:
@@ -212,70 +210,51 @@ def create_agent_room_mcp(
 
     @mcp.tool
     def share_contexts() -> list[str]:
-        """List selected shared context names for this room.
+        """List the current selected handout paths (files or directories) for this room.
 
-        Use this before reading shared files. Only contexts selected when the
-        room was created are returned.
+        Use this before reading shared files. Selections can change during the meeting.
 
         Returns:
-            Selected shared context names.
+            Selected share/-relative file and directory paths.
         """
         return selected_share_contexts()
 
     @mcp.tool
-    def share_list(context_name: str, relative_path: str) -> list[dict[str, Any]]:
-        """List files and directories inside a selected shared context.
+    def share_list(path: str) -> list[dict[str, Any]]:
+        """List direct children of a shared directory using one share/-relative path.
 
-        Args:
-            context_name: Selected context name such as design_db.
-            relative_path: Context-relative directory path. Use "." for root.
-
-        Returns:
-            Direct children with name, relative_path, type, and size.
+        Only selected paths and their descendants are accessible. Returned
+        relative_path values are relative to share/ and can be passed directly
+        to share_list or share_read.
         """
-        target = context_path(context_name, relative_path)
+        selections = selected_share_contexts()
+        target = handout_path(path, selections)
         if not target.is_dir():
-            raise ValueError(f"share path is not a directory: {relative_path}")
-        root = context_root(context_name)
+            raise ValueError(f"share path is not a directory: {path}")
         items = []
         for child in sorted(target.iterdir(), key=lambda item: item.name):
-            item_type = "dir" if child.is_dir() else "file"
-            size = child.stat().st_size if child.is_file() else None
-            items.append(
-                {
-                    "name": child.name,
-                    "relative_path": str(child.relative_to(root)),
-                    "type": item_type,
-                    "size": size,
-                }
-            )
+            child_path = f"{path}/{child.name}"
+            try:
+                handout_path(child_path, selections)
+            except ValueError:
+                continue
+            items.append({"name": child.name, "relative_path": child_path,
+                          "type": "dir" if child.is_dir() else "file", "size": child.stat().st_size if child.is_file() else None})
+        record_access(path, "list")
         return items
 
+    def record_access(path: str, operation: str) -> None:
+        call("POST", url(f"/api/rooms/{room_id}/share/access"), {"actor_id": agent_id, "path": path, "operation": operation})
+
     @mcp.tool
-    def share_read(context_name: str, relative_path: str) -> dict[str, Any]:
-        """Read a text file from a selected shared context.
+    def share_read(path: str) -> dict[str, Any]:
+        """Read a shared text file using one share/-relative path, e.g. design_db/docs/spec.md.
 
-        Args:
-            context_name: Selected context name such as design_db.
-            relative_path: Context-relative file path.
-
-        Returns:
-            File content and truncation metadata.
+        Only selected files and files under selected directories are accessible.
         """
-        target = context_path(context_name, relative_path)
-        if not target.is_file():
-            raise ValueError(f"share path is not a file: {relative_path}")
-        data = target.read_bytes()
-        limit = 60_000
-        truncated = len(data) > limit
-        text = data[:limit].decode("utf-8", errors="replace")
-        return {
-            "context_name": context_name,
-            "relative_path": str(target.relative_to(context_root(context_name))),
-            "content": text,
-            "truncated": truncated,
-            "bytes": len(data),
-        }
+        result = read_path(handout_path(path, selected_share_contexts()))
+        record_access(path, "read")
+        return {"path": path, **result}
 
     if is_controller:
 

@@ -40,7 +40,7 @@
             <strong id="briefAgentTermination">下書き</strong>
           </div>
           <div class="briefItem">
-            <span>共有文脈</span>
+            <span>配布資料</span>
             <strong id="briefShareContexts">なし</strong>
           </div>
         </section>
@@ -69,10 +69,10 @@
               </label>
               <div>
                 <div class="sectionHead">
-                  <h2>共有文脈</h2>
+                  <h2>配布資料</h2>
                   <span>共有</span>
                 </div>
-                <div id="shareContextList" class="contextList"></div>
+                <div id="handoutPickerSlot"><div id="handoutPicker"><div id="shareContextList" class="contextList"></div><button id="saveShare" type="button">配布資料を保存</button><p id="shareStatus" role="status"></p></div></div>
               </div>
               <div>
                 <div class="sectionHead">
@@ -167,7 +167,7 @@
                 </button>
                 <button id="openMinutes" class="scribeDesk" type="button">▤ 書記机<span>議事メモを開く</span></button>
                 <div class="podiumDesk">演台</div><div class="chairDesk">議長</div>
-                <div class="tableCore"><span id="tableState">待機</span></div>
+                <div class="tableCore"><span id="tableState">待機</span><button id="openHandouts" class="handoutStack" type="button">▤ 配布資料</button></div>
                 <div id="seatLayer"></div><div id="whisperLayer"></div>
                 <div id="agentLayer"></div>
               </div>

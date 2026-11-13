@@ -284,3 +284,13 @@ class UpdateMeetingStatusRequest(BaseModel):
     decisions: list[str]
     open_questions: list[str]
     next: str
+
+
+class UpdateShareRequest(BaseModel):
+    paths: list[str]
+
+
+class ShareAccessRequest(BaseModel):
+    actor_id: str
+    path: str
+    operation: Literal["list", "read"]
