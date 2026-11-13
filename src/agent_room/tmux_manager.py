@@ -231,7 +231,7 @@ class TmuxManager:
                     "",
                     "Use room_status_update before phase changes, after each round, and before final reports.",
                     "The room starts quiet for regular agents. Post the first public facilitation message, then use room_open_discussion when agents should begin contributing.",
-                    "Use planned_agents to check selected regular agent templates. Deploy planned agents only when their viewpoint is needed for the current phase.",
+                    "選ばれた通常agentは全員、開始時から傍聴席に着席している。planned_agents で選択されたテンプレートを確認し、話させるagentを seat_assign で討論席または演台へ移す。追加で呼ぶ場合は agent_deploy を使う。",
                     "When assigning turns, state whether the reply is for the whole room or for a named person, and require the same addressee marker in agent replies.",
                     "Use room_close_discussion before the final public report, then use room_finish after the outcome is complete.",
                     "Do not use room_done to finish the room; it only marks your controller agent done.",
@@ -261,7 +261,7 @@ class TmuxManager:
             return []
         lines = [
             "Planned Agents:",
-            "Deploy these template IDs with agent_deploy when the workshop needs them.",
+            "These selected agents are seated in the audience at room start. Use seat_assign to move speakers to discussion seats or the podium.",
         ]
         if room.planned_template_ids:
             lines.extend(f"- {template_id}" for template_id in room.planned_template_ids)
