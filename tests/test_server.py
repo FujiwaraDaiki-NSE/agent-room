@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from agent_room.models import AgentInstance
@@ -157,8 +159,10 @@ def test_room_opens_after_agent_deploy_finishes(tmp_path, monkeypatch) -> None:
     assert event_types == ["room.starting", "message.created", "agent.deployed", "room.started"]
 
 
-def test_room_start_stores_planned_team_templates_but_deploys_controller_only(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("agent_count", [5, 12])
+def test_room_start_deploys_all_selected_agents_in_audience(tmp_path, monkeypatch, agent_count) -> None:
     deployed = []
+    notices = []
     auth_file = tmp_path / "auth.json"
     auth_file.write_text("{}", encoding="utf-8")
 
@@ -183,7 +187,11 @@ def test_room_start_stores_planned_team_templates_but_deploys_controller_only(tm
         )
 
     monkeypatch.setattr(TmuxManager, "deploy", fake_deploy)
+    monkeypatch.setattr(TmuxManager, "send_seat_role", lambda self, agent, seat_id, kind: notices.append((agent.id, seat_id, kind)))
     client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+    team_ids = ["critique-technical", "critique-user", "critique-business", "critique-risk", "idea-reviser"]
+    extra_ids = ["critic", "researcher", "builder", "synthesizer", "facilitator", "operator", "hiroyuki"][:agent_count - 5]
+    selected = team_ids + extra_ids
 
     response = client.post(
         "/api/rooms",
@@ -193,22 +201,50 @@ def test_room_start_stores_planned_team_templates_but_deploys_controller_only(tm
             "controller_termination": "Controller closes the room",
             "agent_termination": "Each agent is done",
             "share_contexts": [],
-            "templates": ["controller"],
+            "templates": extra_ids + ["controller", "critique-technical"],
             "teams": ["critique-lab"],
         },
     )
 
     assert response.status_code == 200
     room = response.json()
-    assert deployed == ["controller"]
-    assert room["planned_template_ids"] == [
-        "critique-technical",
-        "critique-user",
-        "critique-business",
-        "critique-risk",
-        "idea-reviser",
-    ]
-    assert [agent["template_id"] for agent in room["agents"]] == ["controller"]
+    expected = list(dict.fromkeys(extra_ids + ["critique-technical"] + team_ids))
+    assert deployed == ["controller"] + expected
+    assert room["planned_template_ids"] == expected
+    assert [agent["template_id"] for agent in room["agents"]] == deployed
+    occupied = [seat for seat in room["seats"] if seat["agent_id"] is not None]
+    assert len(occupied) == agent_count
+    assert all(seat["kind"] == "audience" for seat in occupied)
+    assert {seat["agent_id"] for seat in occupied} == {f"{template_id}-fake" for template_id in selected}
+    assert notices == [(seat["agent_id"], seat["id"], "audience") for seat in occupied]
+
+
+@pytest.mark.parametrize("agent_count", [13, 15])
+def test_room_start_rejects_audience_overflow_before_tmux(tmp_path, monkeypatch, agent_count) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text("{}", encoding="utf-8")
+
+    def unexpected_tmux(*args, **kwargs):
+        pytest.fail("invalid room creation must not touch tmux")
+
+    monkeypatch.setattr(TmuxManager, "deploy", unexpected_tmux)
+    monkeypatch.setattr(TmuxManager, "stop", unexpected_tmux)
+    client = TestClient(create_app(Path.cwd(), tmp_path, auth_file))
+    before = client.get("/api/rooms").json()
+    controller = agent_instance("controller-fake", "controller", "active", "%1")
+    write_room_agents(tmp_path, before[0]["id"], [controller])
+    before = client.get("/api/rooms").json()
+    templates = sorted(path.parent.name for path in Path("agent-templates").glob("*/agent.json"))[:agent_count]
+    assert len(templates) == agent_count
+    response = client.post("/api/rooms", json={
+        "name": "Too many", "goal": "Discuss architecture",
+        "controller_termination": "Controller closes the room",
+        "agent_termination": "Each agent is done", "share_contexts": [],
+        "templates": ["controller"] + templates, "teams": [],
+    })
+    assert response.status_code == 400
+    assert response.json()["detail"] == "audience seats full"
+    assert client.get("/api/rooms").json() == before
 
 
 def test_share_contexts_list_direct_share_directories(tmp_path) -> None:

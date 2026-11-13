@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .models import (
+    SEAT_COUNTS,
     SeatAssignRequest, SeatMoveRequest, SeatChangeRequest, WhisperRequest, StickyRequest, MinutesRequest, WhiteboardRequest,
     AgentGoalRequest,
     AssignRequest,
@@ -184,9 +185,11 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
         try:
             current = store.current_room()
             share_contexts = _validate_share_contexts(request.share_contexts)
-            _stop_room_panes(current.id, "user", "room restart", False, False)
             selected_template_ids = _selected_template_ids(request.templates, request.teams)
             planned_template_ids = _planned_template_ids(selected_template_ids)
+            if len(planned_template_ids) > dict(SEAT_COUNTS)["audience"]:
+                raise ValueError("audience seats full")
+            _stop_room_panes(current.id, "user", "room restart", False, False)
             room = store.create_room(
                 request.name,
                 request.goal,
@@ -199,6 +202,8 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             store.add_message(room.id, "user", "user", "User", request.goal, "goal")
             try:
                 for template_id in _initial_template_ids(selected_template_ids):
+                    await _deploy(room.id, template_id, 1, "user")
+                for template_id in planned_template_ids:
                     await _deploy(room.id, template_id, 1, "user")
                 room = store.set_room_state(room.id, "open", "system", "controller deployed")
             except (ValueError, TemplateError, TmuxError, KeyError) as exc:

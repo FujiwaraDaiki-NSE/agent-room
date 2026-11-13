@@ -321,6 +321,9 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "The room starts quiet for regular agents" in controller_prompt
     assert "state whether the reply is for the whole room or for a named person" in controller_prompt
     assert "room_open_discussion" in controller_prompt
+    assert "開始時から傍聴席に着席している" in controller_prompt
+    assert "Use seat_assign to move speakers to discussion seats or the podium." in controller_prompt
+    assert "配置時は audience" in agent_prompt
     assert "Planned Agents:" in controller_prompt
     assert "- critic" in controller_prompt
     assert "- researcher" in controller_prompt
