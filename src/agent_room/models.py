@@ -117,6 +117,92 @@ class ApproveFloorRequest(BaseModel):
     actor_id: str
 
 
+SeatKind = Literal["podium", "discussion", "scribe", "audience"]
+SEAT_COUNTS: tuple[tuple[SeatKind, int], ...] = (("podium", 1), ("discussion", 8), ("scribe", 1), ("audience", 12))
+
+
+class Seat(BaseModel):
+    id: str
+    kind: SeatKind
+    index: int
+    agent_id: str | None
+
+
+def initial_seats() -> list[Seat]:
+    return [Seat(id=f"{kind}-{index}", kind=kind, index=index, agent_id=None)
+            for kind, count in SEAT_COUNTS
+            for index in range(1, count + 1)]
+
+
+class SeatRequest(BaseModel):
+    id: str
+    agent_id: str
+    seat_id: str
+    reason: str
+
+
+class Whisper(BaseModel):
+    id: str
+    from_agent_id: str
+    to_agent_id: str
+    text: str
+    created_at: str
+
+
+class Sticky(BaseModel):
+    id: str
+    agent_id: str
+    text: str
+    created_at: str
+
+
+class WhiteboardVersion(BaseModel):
+    id: str
+    title: str
+    html: str
+    phase: str
+    created_at: str
+
+
+class SeatActionRequest(BaseModel):
+    actor_id: str
+    seat_id: str
+
+
+class SeatAssignRequest(SeatActionRequest):
+    agent_id: str
+
+
+class SeatMoveRequest(SeatActionRequest):
+    pass
+
+
+class SeatChangeRequest(SeatActionRequest):
+    reason: str = Field(min_length=1)
+
+
+class WhisperRequest(BaseModel):
+    actor_id: str
+    to_agent_id: str
+    text: str = Field(min_length=1, max_length=200)
+
+
+class StickyRequest(BaseModel):
+    actor_id: str
+    text: str = Field(min_length=1, max_length=80)
+
+
+class MinutesRequest(BaseModel):
+    actor_id: str
+    markdown: str
+
+
+class WhiteboardRequest(BaseModel):
+    actor_id: str
+    title: str
+    html: str
+
+
 class Room(BaseModel):
     id: str
     name: str
@@ -133,6 +219,12 @@ class Room(BaseModel):
     created_at: str
     meeting_status: MeetingStatus
     agents: list[AgentInstance]
+    seats: list[Seat]
+    seat_requests: list[SeatRequest]
+    whispers: list[Whisper]
+    stickies: list[Sticky]
+    minutes: str
+    whiteboard: list[WhiteboardVersion]
 
 
 class CreateRoomRequest(BaseModel):

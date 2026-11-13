@@ -99,7 +99,7 @@ def test_configure_mcp_adds_controller_tools(tmp_path, monkeypatch) -> None:
         state="open",
         created_at="2026-06-19T00:00:00+00:00",
         meeting_status=MEETING_STATUS,
-        agents=[],
+        agents=[], seats=[], seat_requests=[], whispers=[], stickies=[], minutes="", whiteboard=[],
     )
     controller = AgentTemplate.model_validate(
         {
@@ -158,7 +158,7 @@ def test_configure_mcp_limits_regular_agent_tools(tmp_path, monkeypatch) -> None
         state="open",
         created_at="2026-06-19T00:00:00+00:00",
         meeting_status=MEETING_STATUS,
-        agents=[],
+        agents=[], seats=[], seat_requests=[], whispers=[], stickies=[], minutes="", whiteboard=[],
     )
     agent = AgentTemplate.model_validate(
         {
@@ -239,7 +239,7 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
         state="open",
         created_at="2026-06-19T00:00:00+00:00",
         meeting_status=MEETING_STATUS,
-        agents=[],
+        agents=[], seats=[], seat_requests=[], whispers=[], stickies=[], minutes="", whiteboard=[],
     )
     controller = AgentTemplate.model_validate(
         {
