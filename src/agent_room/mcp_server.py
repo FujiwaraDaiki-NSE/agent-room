@@ -50,11 +50,9 @@ def create_agent_room_mcp(
         contexts = selected_share_contexts()
         if context_name not in contexts:
             raise ValueError(f"share context not selected: {context_name}")
-        if Path(context_name).name != context_name:
+        if not context_name or context_name in {".", ".."} or Path(context_name).name != context_name:
             raise ValueError(f"share context must be a directory name: {context_name}")
         root = (resolved_share_root / context_name).resolve()
-        if resolved_share_root not in root.parents:
-            raise ValueError(f"share context path escapes share root: {context_name}")
         if not root.is_dir():
             raise ValueError(f"share context not found: {context_name}")
         return root

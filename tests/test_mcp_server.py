@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 from agent_room.mcp_server import create_agent_room_mcp
 
@@ -46,8 +47,13 @@ async def test_regular_agent_mcp_tools_post_as_agent() -> None:
 
 
 async def test_share_mcp_tools_read_selected_context(tmp_path) -> None:
-    context = tmp_path / "runtime" / "share" / "alpha"
+    context = tmp_path / "share" / "alpha"
     context.mkdir(parents=True)
+    runtime_share = tmp_path / "runtime" / "share"
+    runtime_share.mkdir(parents=True)
+    (runtime_share / "alpha").symlink_to(context, target_is_directory=True)
+    (tmp_path / "share" / "secret.txt").write_text("secret", encoding="utf-8")
+    (context / "escape").symlink_to(tmp_path / "share", target_is_directory=True)
     (context / "README.md").write_text("Alpha context\n", encoding="utf-8")
 
     def fake_request(method, url, payload):
@@ -67,6 +73,11 @@ async def test_share_mcp_tools_read_selected_context(tmp_path) -> None:
 
     async with Client(mcp) as client:
         contexts = await client.call_tool("share_contexts", {})
+        for tool_name in ("share_list", "share_read"):
+            for relative_path in ("..", "../secret.txt", "escape/secret.txt", str(tmp_path / "share" / "secret.txt")):
+                with pytest.raises(ToolError, match="must stay inside the selected context"):
+                    await client.call_tool(tool_name, {"context_name": "alpha", "relative_path": relative_path})
+        (context / "escape").unlink()
         items = await client.call_tool("share_list", {"context_name": "alpha", "relative_path": "."})
         content = await client.call_tool("share_read", {"context_name": "alpha", "relative_path": "README.md"})
 

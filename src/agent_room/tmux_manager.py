@@ -23,20 +23,6 @@ SESSION_ID_PATTERN = re.compile(
     r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl?$"
 )
 
-SHARE_COPY_IGNORE_PATTERNS = (
-    "node_modules",
-    ".venv",
-    "__pycache__",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".mypy_cache",
-    ".next",
-    "dist",
-    "build",
-    "coverage",
-    "tmp",
-)
-
 
 class TmuxManager:
     def __init__(self, project_root: Path, data_dir: Path, codex_auth_file: Path) -> None:
@@ -76,7 +62,7 @@ class TmuxManager:
         if runtime_dir.exists():
             raise TmuxError(f"runtime directory already exists: {runtime_dir}")
         shutil.copytree(template_dir, runtime_dir)
-        self._copy_share_contexts(runtime_dir, room.share_contexts)
+        self._link_share_contexts(runtime_dir, room.share_contexts)
         self._trust_project(runtime_dir)
         self._configure_mcp(runtime_dir, room, template, instance_id)
         self._link_shared_auth(runtime_dir)
@@ -206,7 +192,7 @@ class TmuxManager:
             "- share_read: read a text file from selected shared context",
             "",
             "For shared context discovery, prefer share_contexts and share_list.",
-            "Shared context directories are copied runtime snapshots, so shell tools can inspect ./share directly.",
+            "Shared context directories are symbolic links to shared sources, so shell tools can inspect ./share directly.",
             "",
             "Speak to the meeting only through the Agent Room MCP tools.",
             "Do not call the Agent Room HTTP API or CLI commands directly.",
@@ -398,14 +384,13 @@ class TmuxManager:
             raise TmuxError(f"runtime auth file already exists: {target}")
         target.symlink_to(self.codex_auth_file)
 
-    def _copy_share_contexts(self, runtime_dir: Path, share_contexts: list[str]) -> None:
+    def _link_share_contexts(self, runtime_dir: Path, share_contexts: list[str]) -> None:
         if not self.share_root.is_dir():
             raise TmuxError(f"share directory not found: {self.share_root}")
         runtime_share = runtime_dir / "share"
         if runtime_share.exists() or runtime_share.is_symlink():
             raise TmuxError(f"runtime share path already exists: {runtime_share}")
         runtime_share.mkdir()
-        ignore = shutil.ignore_patterns(*SHARE_COPY_IGNORE_PATTERNS)
         for name in share_contexts:
             if not name or name in {".", ".."} or Path(name).name != name:
                 raise TmuxError(f"share context must be a directory name: {name}")
@@ -413,7 +398,7 @@ class TmuxManager:
             if source.is_symlink() or not source.is_dir():
                 raise TmuxError(f"share context not found: {name}")
             target = runtime_share / name
-            shutil.copytree(source, target, ignore=ignore, symlinks=True)
+            target.symlink_to(source.resolve(), target_is_directory=True)
 
     def _trust_project(self, runtime_dir: Path) -> None:
         config_path = runtime_dir / ".codex" / "config.toml"
