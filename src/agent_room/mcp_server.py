@@ -6,7 +6,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import FastMCP
 
@@ -26,6 +26,8 @@ def create_agent_room_mcp(
     instructions = (
         "Use these tools to participate in the Agent Room. "
         "Read the room before posting, post concise messages to the public room, "
+        "Regular agents post only with a one-use floor; use floor_request to ask to speak. "
+        "Read room_state for pending and deferred floor requests. "
         "and mark yourself done only when your assigned termination condition is met."
     )
     if is_controller:
@@ -34,7 +36,21 @@ def create_agent_room_mcp(
             "Use room_finish, not room_done, to finish the room."
         )
     mcp = FastMCP(name="Agent Room", instructions=instructions)
-    call = request_fn
+
+    def redact(value: Any) -> Any:
+        if isinstance(value, list):
+            return [redact(item) for item in value]
+        if isinstance(value, dict):
+            result = {key: redact(item) for key, item in value.items()}
+            if "from_agent_id" in result and "to_agent_id" in result:
+                if is_controller or agent_id not in (result["from_agent_id"], result["to_agent_id"]):
+                    result.pop("text", None)
+            return result
+        return value
+
+    def call(method: str, target_url: str, payload: dict[str, Any] | None) -> Any:
+        return redact(request_fn(method, target_url, payload))
+
     base_url = server_url.rstrip("/")
     actor_type = "controller" if is_controller else "agent"
     resolved_share_root = share_root.resolve()
@@ -81,6 +97,79 @@ def create_agent_room_mcp(
         if after_id is not None:
             query = "?" + urllib.parse.urlencode({"after_id": after_id})
         return call("GET", url(f"/api/rooms/{room_id}/messages{query}"), None)
+
+    @mcp.tool
+    def room_state() -> dict[str, Any]:
+        """Read room state, including floor grants and pending/deferred requests."""
+        return call("GET", url(f"/api/rooms/{room_id}"), None)
+
+    if not is_controller:
+
+        @mcp.tool
+        def floor_request(kind: Literal["質問", "反論", "補足"], target: str, summary: str) -> dict[str, Any]:
+            """Raise one hand to speak. Only one unresolved request per agent is allowed."""
+            return call("POST", url(f"/api/rooms/{room_id}/floor/requests"), {
+                "actor_id": agent_id, "kind": kind, "target": target, "summary": summary,
+            })
+
+    def seat_call(path: str, payload: dict[str, Any], method: str = "POST") -> dict[str, Any]:
+        return call(method, url(f"/api/rooms/{room_id}/{path}"), {"actor_id": agent_id, **payload})
+
+    if not is_controller:
+        @mcp.tool
+        def seat_move(seat_id: str) -> dict[str, Any]:
+            """Move freely to an empty seat of the same kind."""
+            return seat_call("seats/move", {"seat_id": seat_id})
+
+        @mcp.tool
+        def seat_request(seat_id: str, reason: str) -> dict[str, Any]:
+            """Request controller approval for a different seat kind."""
+            return seat_call("seats/requests", {"seat_id": seat_id, "reason": reason})
+
+        @mcp.tool
+        def seat_leave() -> dict[str, Any]:
+            """Return to the first empty audience seat."""
+            return seat_call("seats/leave", {})
+
+        @mcp.tool
+        def seat_whisper(to_agent_id: str, text: str) -> dict[str, Any]:
+            """Whisper 1–200 characters to a neighbor; wait for their reply."""
+            return seat_call("whispers", {"to_agent_id": to_agent_id, "text": text})
+
+        @mcp.tool
+        def sticky_post(text: str) -> dict[str, Any]:
+            """Post a 1–80 character sticky to the whiteboard."""
+            return seat_call("stickies", {"text": text})
+
+        @mcp.tool
+        def minutes_update(markdown: str) -> dict[str, Any]:
+            """Replace meeting minutes from the scribe seat."""
+            return seat_call("minutes", {"markdown": markdown}, "PUT")
+    else:
+        @mcp.tool
+        def seat_assign(agent_id: str, seat_id: str) -> dict[str, Any]:
+            """Assign a regular agent to an empty seat."""
+            return seat_call("seats/assign", {"agent_id": agent_id, "seat_id": seat_id})
+
+        @mcp.tool
+        def seat_approve(request_id: str) -> dict[str, Any]:
+            """Approve a seat change request."""
+            return seat_call(f"seats/requests/{request_id}/approve", {})
+
+        @mcp.tool
+        def seat_decline(request_id: str, reason: str) -> dict[str, Any]:
+            """Decline a seat change with a reason."""
+            return seat_call(f"seats/requests/{request_id}/decline", {"reason": reason})
+
+        @mcp.tool
+        def sticky_clear() -> dict[str, Any]:
+            """Clear all sticky notes."""
+            return seat_call("stickies/clear", {})
+
+        @mcp.tool
+        def whiteboard_update(title: str, html: str) -> dict[str, Any]:
+            """Append an HTML whiteboard version; draw with SVG/CSS."""
+            return seat_call("whiteboard", {"title": title, "html": html})
 
     @mcp.tool
     def room_post(text: str) -> dict[str, Any]:
@@ -189,6 +278,25 @@ def create_agent_room_mcp(
         }
 
     if is_controller:
+
+        @mcp.tool
+        def agent_assign(agent_ids: list[str], question: str) -> dict[str, Any]:
+            """Grant one post per named agent and send the question with original public statements."""
+            return call("POST", url(f"/api/rooms/{room_id}/assign"), {
+                "actor_id": agent_id, "agent_ids": agent_ids, "question": question,
+            })
+
+        @mcp.tool
+        def floor_approve(request_id: str) -> dict[str, Any]:
+            """Approve a pending or deferred request and notify the agent of its one-use floor."""
+            return call("POST", url(f"/api/rooms/{room_id}/floor/requests/{request_id}/approve"), {"actor_id": agent_id})
+
+        @mcp.tool
+        def floor_decline(request_id: str, reason: str, defer: bool) -> dict[str, Any]:
+            """Decline a request, keeping it in the queue when defer is true."""
+            return call("POST", url(f"/api/rooms/{room_id}/floor/requests/{request_id}/decline"), {
+                "actor_id": agent_id, "reason": reason, "defer": defer,
+            })
 
         @mcp.tool
         def controller_read(after_id: int | None = None) -> list[dict[str, Any]]:

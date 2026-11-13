@@ -34,7 +34,7 @@ async def test_regular_agent_mcp_tools_post_as_agent() -> None:
         names = {tool.name for tool in tools}
         result = await client.call_tool("room_post", {"text": "Public"})
 
-    assert names == {"room_read", "room_post", "room_done", "share_contexts", "share_list", "share_read"}
+    assert names == {"seat_move", "seat_request", "seat_leave", "seat_whisper", "sticky_post", "minutes_update", "floor_request", "room_state", "room_read", "room_post", "room_done", "share_contexts", "share_list", "share_read"}
     assert result.data["payload"] == {
         "actor_type": "agent",
         "actor_id": "critic-1",
@@ -135,6 +135,11 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
         mute_result = await client.call_tool("agent_mute", {"target_agent_id": "critic-1", "reason": "over limit"})
 
     assert {
+        "seat_assign", "seat_approve", "seat_decline", "sticky_clear", "whiteboard_update",
+        "room_state",
+        "agent_assign",
+        "floor_approve",
+        "floor_decline",
         "room_read",
         "room_post",
         "room_done",
@@ -190,3 +195,33 @@ async def test_controller_mcp_tools_include_private_and_lifecycle_tools() -> Non
     assert calls[-3][1] == "http://server/api/rooms/room-1/discussion/close"
     assert calls[-2][1] == "http://server/api/rooms/room-1/done"
     assert calls[-1][1] == "http://server/api/rooms/room-1/agents/critic-1/mute"
+
+
+async def test_floor_tools_route_payloads_and_room_state():
+    calls = []
+
+    def fake_request(method, url, payload):
+        calls.append((method, url, payload))
+        return {"floor_requests": [], "floor_grants": []}
+
+    def make_mcp(controller):
+        return create_agent_room_mcp(
+            server_url="http://server", room_id="room-1",
+            agent_id="controller-1" if controller else "critic-1", agent_name="Participant",
+            share_root=Path.cwd() / "share", is_controller=controller, request_fn=fake_request,
+        )
+
+    async with Client(make_mcp(False)) as client:
+        await client.call_tool("floor_request", {"kind": "質問", "target": "Builder", "summary": "Why?"})
+        await client.call_tool("room_state", {})
+    async with Client(make_mcp(True)) as client:
+        await client.call_tool("agent_assign", {"agent_ids": ["critic-1"], "question": "Clarify?"})
+        await client.call_tool("floor_approve", {"request_id": "request-1"})
+        await client.call_tool("floor_decline", {"request_id": "request-2", "reason": "Later", "defer": True})
+    assert calls == [
+        ("POST", "http://server/api/rooms/room-1/floor/requests", {"actor_id": "critic-1", "kind": "質問", "target": "Builder", "summary": "Why?"}),
+        ("GET", "http://server/api/rooms/room-1", None),
+        ("POST", "http://server/api/rooms/room-1/assign", {"actor_id": "controller-1", "agent_ids": ["critic-1"], "question": "Clarify?"}),
+        ("POST", "http://server/api/rooms/room-1/floor/requests/request-1/approve", {"actor_id": "controller-1"}),
+        ("POST", "http://server/api/rooms/room-1/floor/requests/request-2/decline", {"actor_id": "controller-1", "reason": "Later", "defer": True}),
+    ]

@@ -8,7 +8,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .models import (
+    SeatAssignRequest, SeatMoveRequest, SeatChangeRequest, WhisperRequest, StickyRequest, MinutesRequest, WhiteboardRequest,
     AgentGoalRequest,
+    AssignRequest,
+    RequestFloorRequest,
+    ApproveFloorRequest,
+    DeclineFloorRequest,
     CreateRoomRequest,
     DeployAgentRequest,
     MarkDoneRequest,
@@ -162,7 +167,6 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
     @app.post("/api/rooms/{room_id}/messages")
     async def post_message(room_id: str, request: PostMessageRequest) -> dict[str, Any]:
         try:
-            _assert_can_post(room_id, request)
             message = store.add_message(
                 room_id,
                 request.actor_type,
@@ -171,7 +175,7 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
                 request.text,
                 request.kind,
             )
-            await hub.broadcast(room_id, {"type": "message.created", "message": message.model_dump()})
+            await hub.broadcast(room_id, {"type": "message.created", "message": message.model_dump(), "room": store.get_room(room_id).model_dump()})
             return message.model_dump()
         except (ValueError, KeyError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -212,6 +216,177 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
         except (ValueError, KeyError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/api/rooms/{room_id}/assign")
+    async def assign_agents(room_id: str, request: AssignRequest) -> dict[str, Any]:
+        try:
+            _require_controller_agent(room_id, request.actor_id)
+            if not request.question.strip() or len(set(request.agent_ids)) != len(request.agent_ids):
+                raise ValueError("question is required and agent_ids must be unique")
+            room = store.get_room(room_id)
+            for agent_id in request.agent_ids:
+                _require_regular_agent(room_id, agent_id)
+            messages = store.list_messages(room_id, None)
+            for agent_id in request.agent_ids:
+                agent = next(a for a in room.agents if a.id == agent_id)
+                last_id = max((m.id for m in messages if m.actor_id == agent_id), default=0)
+                original = "\n\n".join(f"#{m.id} {m.actor_name} ({m.actor_id})\n{m.text}" for m in messages if m.id > last_id)
+                tmux.send_floor_notice(agent, f"指名: {request.question}\n1回分の発言権があります。\n前回投稿以降のpublic発言（原文）:\n{original}")
+            room = store.grant_floor(room_id, request.agent_ids)
+            await hub.broadcast(room_id, {"type": "floor.updated", "room": room.model_dump()})
+            return room.model_dump()
+        except (ValueError, KeyError, TmuxError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/floor/requests")
+    async def request_floor(room_id: str, request: RequestFloorRequest) -> dict[str, Any]:
+        try:
+            _require_regular_agent(room_id, request.actor_id)
+            room = store.request_floor(room_id, request.actor_id, request.kind, request.target, request.summary)
+            await hub.broadcast(room_id, {"type": "floor.updated", "room": room.model_dump()})
+            return room.model_dump()
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/floor/requests/{request_id}/approve")
+    async def approve_floor(room_id: str, request_id: str, request: ApproveFloorRequest) -> dict[str, Any]:
+        try:
+            _require_controller_agent(room_id, request.actor_id)
+            room = store.get_room(room_id)
+            entry = next((r for r in room.floor_requests if r.id == request_id), None)
+            if entry is None:
+                raise ValueError(f"floor request not found: {request_id}")
+            agent = next(a for a in room.agents if a.id == entry.agent_id)
+            tmux.send_floor_notice(agent, f"挙手承認: {request_id}\n{entry.summary}\n1回分の発言権があります。room_readで原文を確認して投稿してください。")
+            room = store.resolve_floor(room_id, request_id, True, None, False)
+            await hub.broadcast(room_id, {"type": "floor.updated", "room": room.model_dump()})
+            return room.model_dump()
+        except (ValueError, KeyError, TmuxError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/floor/requests/{request_id}/decline")
+    async def decline_floor(room_id: str, request_id: str, request: DeclineFloorRequest) -> dict[str, Any]:
+        try:
+            _require_controller_agent(room_id, request.actor_id)
+            if not request.reason.strip():
+                raise ValueError("reason is required")
+            room = store.resolve_floor(room_id, request_id, False, request.reason, request.defer)
+            await hub.broadcast(room_id, {"type": "floor.updated", "room": room.model_dump()})
+            return room.model_dump()
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def _seat_notice(room, agent_id):
+        seat = next(s for s in room.seats if s.agent_id == agent_id)
+        agent = next(a for a in room.agents if a.id == agent_id)
+        tmux.send_seat_role(agent, seat.id, seat.kind)
+
+    async def _seat_result(room, agent_id, notify):
+        if notify:
+            _seat_notice(room, agent_id)
+        await hub.broadcast(room.id, {"type": "seat.updated", "room": room.model_dump()})
+        return room.model_dump()
+
+    @app.post("/api/rooms/{room_id}/seats/assign")
+    async def seat_assign(room_id: str, request: SeatAssignRequest):
+        try:
+            _require_controller_agent(room_id, request.actor_id)
+            room = store.seat_action(room_id, request.agent_id, "assign", request.seat_id, None)
+            return await _seat_result(room, request.agent_id, True)
+        except (ValueError, KeyError, TmuxError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/seats/move")
+    async def seat_move(room_id: str, request: SeatMoveRequest):
+        try:
+            room = store.seat_action(room_id, request.actor_id, "move", request.seat_id, None)
+            return await _seat_result(room, request.actor_id, True)
+        except (ValueError, KeyError, TmuxError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/seats/requests")
+    async def seat_request(room_id: str, request: SeatChangeRequest):
+        try:
+            room = store.seat_action(room_id, request.actor_id, "request", request.seat_id, request.reason)
+            return await _seat_result(room, request.actor_id, False)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/seats/leave")
+    async def seat_leave(room_id: str, request: ApproveFloorRequest):
+        try:
+            room = store.seat_action(room_id, request.actor_id, "leave", None, None)
+            return await _seat_result(room, request.actor_id, True)
+        except (ValueError, KeyError, TmuxError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/seats/requests/{request_id}/approve")
+    async def seat_approve(room_id: str, request_id: str, request: ApproveFloorRequest):
+        try:
+            _require_controller_agent(room_id, request.actor_id)
+            entry = next((r for r in store.get_room(room_id).seat_requests if r.id == request_id), None)
+            if entry is None:
+                raise ValueError("seat request not found")
+            room = store.seat_action(room_id, entry.agent_id, "assign", entry.seat_id, None)
+            return await _seat_result(room, entry.agent_id, True)
+        except (ValueError, KeyError, TmuxError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/seats/requests/{request_id}/decline")
+    async def seat_decline(room_id: str, request_id: str, request: MarkDoneRequest):
+        try:
+            _require_controller_agent(room_id, request.actor_id)
+            room = store.decline_seat(room_id, request_id, request.reason)
+            return await _seat_result(room, request.actor_id, False)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/whispers")
+    async def seat_whisper(room_id: str, request: WhisperRequest):
+        try:
+            room = store.whisper(room_id, request.actor_id, request.to_agent_id, request.text)
+            sender = next(a for a in room.agents if a.id == request.actor_id)
+            target = next(a for a in room.agents if a.id == request.to_agent_id)
+            seat = next(s for s in room.seats if s.agent_id == sender.id)
+            tmux.send_floor_notice(target, f"{sender.name}（{seat.id}）が小声で: {request.text}")
+            await hub.broadcast(room_id, {"type": "whisper.created", "whisper": room.whispers[-1].model_dump(), "room": room.model_dump()})
+            return room.model_dump()
+        except (ValueError, KeyError, TmuxError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    async def _board_result(room, event):
+        await hub.broadcast(room.id, {"type": event, "room": room.model_dump()})
+        return room.model_dump()
+
+    @app.post("/api/rooms/{room_id}/stickies")
+    async def sticky_post(room_id: str, request: StickyRequest):
+        try:
+            return await _board_result(store.update_board(room_id, request.actor_id, "sticky", request.text, None), "sticky.updated")
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/stickies/clear")
+    async def sticky_clear(room_id: str, request: ApproveFloorRequest):
+        try:
+            _require_controller_agent(room_id, request.actor_id)
+            return await _board_result(store.update_board(room_id, request.actor_id, "clear", "", None), "sticky.updated")
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.put("/api/rooms/{room_id}/minutes")
+    async def minutes_update(room_id: str, request: MinutesRequest):
+        try:
+            return await _board_result(store.update_board(room_id, request.actor_id, "minutes", request.markdown, None), "minutes.updated")
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/whiteboard")
+    async def whiteboard_update(room_id: str, request: WhiteboardRequest):
+        try:
+            _require_controller_agent(room_id, request.actor_id)
+            return await _board_result(store.update_board(room_id, request.actor_id, "whiteboard", request.html, request.title), "whiteboard.updated")
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @app.get("/api/rooms/{room_id}/events")
     def list_events(room_id: str) -> list[dict[str, Any]]:
         try:
@@ -244,7 +419,7 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
             room = await _deploy(room_id, request.template_id, request.count, request.actor_id)
             await hub.broadcast(room_id, {"type": "agent.deployed", "room": room.model_dump()})
             return room.model_dump()
-        except (TemplateError, TmuxError, KeyError) as exc:
+        except (ValueError, TemplateError, TmuxError, KeyError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/rooms/{room_id}/agents/{agent_id}/stop")
@@ -414,6 +589,10 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
         room = store.get_room(room_id)
         template = registry.get(template_id)
         template_dir = registry.path_for(template_id)
+        if template.scope != "controller" and count > sum(s.kind == "audience" and s.agent_id is None for s in room.seats):
+            raise ValueError("audience seats full")
+        if template.scope != "controller":
+            (project_root / "seat-types" / "audience.md").read_text(encoding="utf-8")
         for _ in range(count):
             agent = tmux.deploy(
                 room,
@@ -425,6 +604,9 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
                 room.agent_termination,
             )
             room = store.add_agent(room_id, agent, actor_id)
+            if template.scope != "controller":
+                _seat_notice(room, agent.id)
+                await hub.broadcast(room_id, {"type": "seat.updated", "room": room.model_dump()})
         return room
 
     def _selected_template_ids(template_ids: list[str], team_ids: list[str]) -> list[str]:
@@ -504,15 +686,6 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
                 actor_id,
                 "agent.stopped",
             )
-
-    def _assert_can_post(room_id: str, request: PostMessageRequest) -> None:
-        if request.actor_type != "agent":
-            return
-        room = store.get_room(room_id)
-        if request.actor_id in room.muted_agent_ids:
-            raise ValueError(f"agent is muted: {request.actor_id}")
-        if room.agent_posting_closed:
-            raise ValueError("room discussion is closed; wait for controller")
 
     def _require_regular_agent(room_id: str, agent_id: str) -> None:
         room = store.get_room(room_id)

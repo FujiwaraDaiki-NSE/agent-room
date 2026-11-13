@@ -222,3 +222,19 @@ Use `controller_read` and `controller_post` for user whispers that should not ap
 - Do not kill the tmux session.
 - Do not stop the meeting app pane.
 - Stop only deployed agent panes when instructed or when the room is finished.
+
+## 発言権と意図の保持
+
+- 指名は `agent_assign(agent_ids, question)` を使う。対象の通常agentに最大1回分の発言権を与え、質問とそのagentの前回投稿以降のpublic原文をpaneに送る。全体への呼びかけやdiscussionの開始だけでは発言権は与えられない。
+- `room_state` の未処理・保留キューを確認し、`floor_approve(request_id)` で承認するか、`floor_decline(request_id, reason, defer)` で理由付きで却下する。defer=trueなら保留キューに残る。承認すると対象agentに最大1回分の発言権が与えられ、通知される。
+- 要約は論点ごとに根拠の発言番号を付ける。
+- 要約で取り上げた発言者に `agent_assign` で意図確認を取り、その確認後にaccept/revise/blockのgateに進む。gateの回答を依頼する際も `agent_assign` で発言権を与える。
+- 最終レポートに不採用意見を発言者の言葉で、発言番号・発言者とともに残す。
+
+## 座席・小声・共有ボード
+
+- controller は席を持たない。通常agentは deploy 時に最小番号の空き傍聴席へ座る。発言させる前に `seat_assign(agent_id, seat_id)` で討論席または演台へ移す。演台着席は1回分の発言権を与える。席の役目はテンプレートの人格を保持して優先される。
+- 同kindの空席への `seat_move` は自由。別kindは `seat_request` を `seat_approve(request_id)` / `seat_decline(request_id, reason)` で処理する。`seat_leave` は空き傍聴席へ戻る。
+- 公開発言・挙手は podium/discussion のみ。議事メモの `minutes_update(markdown)` は scribe のみで全文置換。全席で `sticky_post(text)`（1〜80文字）が可能。`sticky_clear()` で付箋を全消去する。
+- 小声は discussion のリング隣席、audience の同じ列の隣席のみ。1〜200文字、相手の返答まで連投不可。controller は本文を読めない。小声の内容を議論に持ち込む時は挙手して公開発言で言い直す。
+- `whiteboard_update(title, html)` で現在の phase を持つ版を追記する。説明図は SVG/CSS で描く。UI は sandbox="" の iframe/srcdoc で描画し、先頭に `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">` を挿入する。スクリプト・外部読み込み・同一オリジン権限は使えない。

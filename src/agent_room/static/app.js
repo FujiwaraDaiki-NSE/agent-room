@@ -11,6 +11,9 @@ const state = {
   activeChat: "messages",
   pendingAction: "",
   status: { text: "", error: false },
+  documentView: null,
+  whiteboardVersion: null,
+  whispers: new Map(),
   bubbles: new Map(),
   bubbleTimers: new Map(),
 };
@@ -107,6 +110,18 @@ async function api(path, options = {}) {
 }
 
 async function boot() {
+  $("openWhiteboard").onclick = () => openDocument("whiteboard");
+  $("openMinutes").onclick = () => openDocument("minutes");
+  $("closeDrawer").onclick = closeDocument;
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeDocument();
+    if (event.key === "Tab" && state.documentView) {
+      const controls = [...$("documentDrawer").querySelectorAll("button, iframe, a[href], [tabindex='0']")];
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+  });
   $("refresh").addEventListener("click", () => runAction("Refresh", refresh));
   $("newRoom").addEventListener("click", () => runAction("New", resetRoom));
   $("startRoom").addEventListener("click", () => runAction("Start", startRoom));
@@ -270,7 +285,7 @@ function connectRoom() {
   state.ws.onclose = renderControls;
   state.ws.onmessage = async (event) => {
     const payload = JSON.parse(event.data);
-    if (payload.message) {
+    if (payload.message && payload.type !== "whisper.created") {
       state.messages.push(payload.message);
       showBubble(payload.message);
     }
@@ -291,6 +306,7 @@ function connectRoom() {
       state.room = payload.room;
       if (payload.type === "room.status_updated") trackStatusEvent(payload.room);
     }
+    if (payload.type === "whisper.created") showWhisper(payload.whisper);
     renderRoom();
   };
 }
@@ -457,6 +473,14 @@ function renderRoom() {
   renderShareContexts();
   renderAgents(room ? room.agents : []);
   renderMeetingStatus(room);
+  renderDocuments();
+  renderWhispers();
+  const requests = room ? room.floor_requests : [];
+  $("floorCount").textContent = `未処理の挙手 ${requests.length}件（保留含む）`;
+  renderStatusList("floorQueue", requests.map(request => {
+    const agent = room.agents.find(item => item.id === request.agent_id);
+    return `${agent ? agent.name : request.agent_id} → ${request.target} · ${request.kind} · ${request.summary} · ${request.status === "deferred" ? "保留: " + request.reason : "承認待ち"} [${request.id}]`;
+  }), "挙手なし");
   renderProgressStrip(room);
   renderRoster(room ? room.agents : []);
   renderMessageList("messages", state.messages, "発言なし", false);
@@ -476,6 +500,8 @@ function renderBrief(room) {
 function renderMeetingStatus(room) {
   const status = room ? room.meeting_status : null;
   $("meetingPhase").textContent = status ? phaseLabel(status.phase) : "下書き";
+  $("boardPhase").textContent = status ? phaseLabel(status.phase) : "下書き";
+  $("boardTopic").textContent = status ? localizeText(status.topic) : "なし";
   $("meetingTopic").textContent = status && status.topic ? localizeText(status.topic) : "なし";
   $("meetingSummary").textContent = status && status.summary ? localizeText(status.summary) : "保留";
   $("meetingNext").textContent = status && status.next ? localizeText(status.next) : "進行役";
@@ -738,40 +764,126 @@ function renderStatus() {
   status.classList.toggle("empty", !state.status.text);
 }
 
+const SEAT_LABELS = {podium: "演台", discussion: "討論", scribe: "書記", audience: "傍聴"};
+function seatPosition(seat) {
+  if (seat.kind === "podium") return [48, 245];
+  if (seat.kind === "scribe") return [17, 245];
+  if (seat.kind === "controller") return [80, 245];
+  if (seat.kind === "discussion") {
+    const angle = -Math.PI / 2 + (seat.index - 1) * Math.PI / 4;
+    return [50 + Math.cos(angle) * 34, 595 + Math.sin(angle) * 190];
+  }
+  return [10 + ((seat.index - 1) % 6) * 16, 900 + Math.floor((seat.index - 1) / 6) * 145];
+}
 function renderAgents(agents) {
+  const seats = state.room ? state.room.seats : [];
+  $("seatLayer").innerHTML = [...seats, {kind:"controller", index:1}].map(seat => {
+    const [x,y] = seatPosition(seat);
+    const occupant = agents.find(agent => seat.kind === "controller" ? agent.template_id === "controller" : agent.id === seat.agent_id);
+    return `<div class="physicalSeat kind-${seat.kind} ${occupant ? `state-${agentStateClass(occupant.state)}` : ""}" style="left:${x}%;top:${y}px"><div class="chair"></div><small>${seat.kind === "controller" ? "議長席" : `${SEAT_LABELS[seat.kind]} ${seat.index}`}</small></div>`;
+  }).join("");
   const layer = $("agentLayer");
-  if (!agents.length) {
-    layer.innerHTML = `<div class="emptySeat">Agentなし</div>`;
+  const visible = new Set();
+  agents.forEach(agent => {
+    const seat = agent.template_id === "controller" ? {kind:"controller"} : seats.find(item => item.agent_id === agent.id);
+    if (!seat) return;
+    visible.add(agent.id);
+    let node = [...layer.children].find(item => item.dataset.agentId === agent.id);
+    if (!node) { node = document.createElement("div"); node.dataset.agentId = agent.id; layer.append(node); }
+    const [x,y] = seatPosition(seat);
+    const granted = state.room.floor_grants.includes(agent.id);
+    const request = state.room.floor_requests.find(item => item.agent_id === agent.id);
+    const bubble = state.bubbles.get(agent.id);
+    node.className = `seat state-${agentStateClass(agent.state)} kind-${seat.kind} ${granted ? "hasFloor" : ""}`;
+    node.style.cssText = `left:${x}%;top:${y}px;--accent:${safeColor(agent.accent)}`;
+    node.setAttribute("aria-label", `${displayName(agent.name)}・${SEAT_LABELS[seat.kind] || "議長"}・${stateLabel(agent.state)}`);
+    node.innerHTML = `<div class="avatar"><img src="${escapeHtml(agent.avatar_url)}" alt="${escapeHtml(agent.name)}">${isMuted(agent) ? '<span class="muteMark" aria-label="ミュート">×</span>' : ''}</div>
+      <div class="seatName" title="${escapeHtml(agent.name)}">${escapeHtml(seatLabel(agent,agents))}</div>
+      <div class="seatSignals">${granted ? '<span class="floorMic"><svg viewBox="0 0 20 24" aria-hidden="true"><rect x="7" y="1" width="6" height="12" rx="3"/><path d="M4 9v2a6 6 0 0 0 12 0V9M10 17v5M5 22h10"/></svg>発言権</span>' : ''}${request ? `<span class="handRequest ${escapeHtml(request.status)}">✋ ${escapeHtml(request.kind)}${request.status === "deferred" ? "・保留" : ""}</span>` : ''}</div>
+      ${bubble ? `<div class="bubble" tabindex="0">${escapeHtml(previewText(bubble.text,180))}</div>` : ''}`;
+  });
+  [...layer.children].forEach(node => { if (!visible.has(node.dataset.agentId)) node.remove(); });
+}
+
+function whiteboardFrame(version, preview) {
+  const frame = document.createElement("iframe");
+  frame.setAttribute("sandbox", "");
+  frame.title = version.title;
+  frame.srcdoc = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:system-ui;margin:16px;overflow-wrap:anywhere}img,svg{max-width:100%}</style>${version.html}`;
+  if (preview) { frame.tabIndex = -1; frame.setAttribute("aria-hidden", "true"); }
+  return frame;
+}
+function renderDocuments() {
+  const versions = state.room ? state.room.whiteboard : [];
+  const latest = versions.at(-1);
+  $("boardTitle").textContent = latest ? latest.title : "ホワイトボード・未記入";
+  const preview = $("boardPreview");
+  if (preview.dataset.version !== String(latest?.id)) {
+    preview.replaceChildren();
+    if (latest) preview.append(whiteboardFrame(latest,true));
+    preview.dataset.version = String(latest?.id);
+  }
+  $("boardStickies").innerHTML = (state.room ? state.room.stickies : []).map(sticky => `<span title="${escapeHtml(sticky.text)}">${escapeHtml(sticky.text)}</span>`).join("");
+  if (!state.documentView) return;
+  $("drawerTitle").textContent = state.documentView === "minutes" ? "議事メモ" : "ホワイトボード";
+  const history = $("documentHistory"); const body = $("documentBody");
+  if (state.documentView === "minutes") {
+    history.replaceChildren();
+    body.className = "messageText";
+    body.innerHTML = state.room && state.room.minutes ? renderMarkdown(state.room.minutes) : '<p class="emptyState">議事メモはまだありません</p>';
     return;
   }
-  const radius = agents.length > 8 ? 39 : 42;
-  layer.innerHTML = agents
-    .map((agent, index) => {
-      const angle = -90 + (360 / agents.length) * index;
-      const rad = (angle * Math.PI) / 180;
-      const x = 50 + Math.cos(rad) * radius;
-      const y = 50 + Math.sin(rad) * radius;
-      const bubble = state.bubbles.get(agent.id);
-      const agentState = agentStateClass(agent.state);
-      const signal = agentSignal(agent);
-      const bubbleClass = y > 58 ? "bubbleUp" : x < 35 ? "bubbleRight" : x > 65 ? "bubbleLeft" : "bubbleDown";
-      const label = seatLabel(agent, agents);
-      return `
-        <div class="seat state-${agentState} ${agents.length > 8 ? "compactSeat" : ""} ${bubbleClass}"
-          style="--seat-x:${x}%;--seat-y:${y}%;--accent:${safeColor(agent.accent)}"
-          aria-label="${escapeHtml(`${displayName(agent.name)} ${stateLabel(agent.state)}`)}">
-          <div class="avatar">
-            <img src="${escapeHtml(agent.avatar_url)}" alt="${escapeHtml(displayName(agent.name))}" />
-            <span class="stateDot" aria-hidden="true"></span>
-            <span class="moodGlyph mood-${signal.key}" title="${escapeHtml(signal.label)}" aria-label="${escapeHtml(signal.label)}">${escapeHtml(signal.glyph)}</span>
-          </div>
-          <div class="seatName">${escapeHtml(label)}</div>
-          <div class="seatRole">${escapeHtml(roleLabel(agent.role))}</div>
-          ${bubble ? `<div class="bubble">${escapeHtml(previewText(bubble.text, 180))}</div>` : ""}
-        </div>
-      `;
-    })
-    .join("");
+  body.className = "";
+  history.replaceChildren();
+  versions.slice().reverse().forEach(version => {
+    const button = document.createElement("button");
+    button.textContent = `${version.title} · ${phaseLabel(version.phase)} · ${formatTime(version.created_at)}`;
+    button.classList.toggle("active", state.whiteboardVersion === version.id || (state.whiteboardVersion === null && version === latest));
+    button.onclick = () => { state.whiteboardVersion = version.id; renderDocuments(); };
+    history.append(button);
+  });
+  const version = state.whiteboardVersion === null ? latest : versions.find(item => item.id === state.whiteboardVersion);
+  const key = version ? String(version.id) : "empty";
+  if (body.dataset.version !== key || !body.querySelector("iframe")) {
+    body.replaceChildren();
+    if (version) body.append(whiteboardFrame(version,false));
+    else body.textContent = "ホワイトボードはまだありません";
+    body.dataset.version = key;
+  }
+}
+function openDocument(view) {
+  state.documentView = view; state.whiteboardVersion = null;
+  $("documentDrawer").hidden = false; renderDocuments(); $("closeDrawer").focus();
+}
+function closeDocument() {
+  if (!state.documentView) return;
+  const view = state.documentView; state.documentView = null; $("documentDrawer").hidden = true;
+  $(view === "minutes" ? "openMinutes" : "openWhiteboard").focus();
+}
+function showWhisper(whisper) {
+  if (state.whispers.has(whisper.id)) return;
+  state.whispers.set(whisper.id, whisper); renderWhispers();
+  setTimeout(() => { state.whispers.delete(whisper.id); renderWhispers(); }, 6500);
+}
+function renderWhispers() {
+  const layer = $("whisperLayer");
+  [...layer.children].forEach(node => { if (![...state.whispers.keys()].some(id => String(id) === node.dataset.id)) node.remove(); });
+  state.whispers.forEach((whisper,id) => {
+    if ([...layer.children].some(node => node.dataset.id === String(id))) return;
+    const from = state.room.seats.find(seat => seat.agent_id === whisper.from_agent_id);
+    const to = state.room.seats.find(seat => seat.agent_id === whisper.to_agent_id);
+    if (!from || !to) return;
+    const [x1,y1] = seatPosition(from), [x2,y2] = seatPosition(to);
+    const node = document.createElement("div"); node.className = "whisperEffect"; node.dataset.id = String(id);
+    node.innerHTML = `<svg viewBox="0 0 100 1200" preserveAspectRatio="none" aria-hidden="true"><path d="M${x1} ${y1} Q${(x1+x2)/2} ${Math.min(y1,y2)-85} ${x2} ${y2}"/></svg><button type="button" style="left:clamp(58px,${(x1+x2)/2}%,calc(100% - 58px));top:${(y1+y2)/2-40}px" aria-label="小声の本文を読む">ひそひそ…<span class="whisperBlur">${escapeHtml(previewText(whisper.text,12))}</span></button>`;
+    node.querySelector("button").onclick = event => {
+      const button = event.currentTarget; const expanded = button.getAttribute("aria-expanded") === "true";
+      button.setAttribute("aria-expanded", String(!expanded));
+      button.querySelector("span").className = expanded ? "whisperBlur" : "whisperText";
+      button.querySelector("span").textContent = expanded ? previewText(whisper.text,12) : whisper.text;
+    };
+    layer.append(node);
+  });
 }
 
 function renderRoster(agents) {
@@ -864,6 +976,9 @@ function clearBubbles() {
   state.bubbleTimers.forEach((timer) => clearTimeout(timer));
   state.bubbleTimers.clear();
   state.bubbles.clear();
+  state.whispers.clear();
+  $("whisperLayer").replaceChildren();
+  state.whiteboardVersion = null;
 }
 
 function setActiveChat(chat) {
