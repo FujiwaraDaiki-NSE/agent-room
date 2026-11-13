@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import AgentInstance, ActorType, Event, MeetingStatus, Message, Room, RoomState
+from .models import AgentInstance, ActorType, Event, FloorRequest, MeetingStatus, Message, Room, RoomState
 
 
 AUTO_ROOM_NAME = "Room"
@@ -108,6 +108,8 @@ class Store:
             room.planned_template_ids = planned_template_ids
             room.agent_posting_closed = True
             room.muted_agent_ids = []
+            room.floor_grants = []
+            room.floor_requests = []
             room.state = state
             room.meeting_status = meeting_status(self._room_state_label(state), goal, "", "Controller", None)
             room.agents = []
@@ -270,7 +272,24 @@ class Store:
         self._require("text", text)
         with self.lock:
             data = self._read()
-            self._room(data, room_id)
+            room = self._room(data, room_id)
+            agent = next((a for a in room.agents if a.id == actor_id), None)
+            if actor_type == "agent" or (agent is not None and agent.template_id != "controller"):
+                if agent is None:
+                    raise ValueError(f"agent not found: {actor_id}")
+                if actor_id in room.muted_agent_ids:
+                    raise ValueError(f"agent is muted: {actor_id}")
+                if room.agent_posting_closed:
+                    raise ValueError("room discussion is closed; wait for controller")
+                if actor_id not in room.floor_grants:
+                    raise ValueError("agent has no floor; use floor_request")
+                room.floor_grants.remove(actor_id)
+            if text.startswith("宛先: "):
+                target = text.split("\n", 1)[0][len("宛先: "):].strip()
+                matches = [a for a in room.agents if a.template_id != "controller" and a.id != actor_id and target in (a.name, a.id)]
+                if len(matches) == 1 and matches[0].id not in room.floor_grants:
+                    room.floor_grants.append(matches[0].id)
+            data["rooms"][room_id] = room.model_dump()
             message_id = int(data["next_message_id"])
             data["next_message_id"] = message_id + 1
             message = Message(
@@ -287,6 +306,53 @@ class Store:
             self._append_event(data, room_id, "message.created", actor_id, None, None, {"message_id": message_id})
             self._write(data)
             return message
+
+    def grant_floor(self, room_id: str, agent_ids: list[str]) -> Room:
+        with self.lock:
+            data = self._read()
+            room = self._room(data, room_id)
+            for agent_id in agent_ids:
+                if agent_id not in room.floor_grants:
+                    room.floor_grants.append(agent_id)
+            data["rooms"][room_id] = room.model_dump()
+            self._write(data)
+            return room
+
+    def request_floor(self, room_id: str, agent_id: str, kind: str, target: str, summary: str) -> Room:
+        self._require("target", target)
+        self._require("summary", summary)
+        if len(summary.splitlines()) != 1:
+            raise ValueError("summary must be one line")
+        with self.lock:
+            data = self._read()
+            room = self._room(data, room_id)
+            if any(r.agent_id == agent_id for r in room.floor_requests):
+                raise ValueError("agent already has an unresolved floor request")
+            room.floor_requests.append(FloorRequest(
+                id=uuid.uuid4().hex, agent_id=agent_id, kind=kind,
+                target=target, summary=summary, status="pending", reason=None,
+            ))
+            data["rooms"][room_id] = room.model_dump()
+            self._write(data)
+            return room
+
+    def resolve_floor(self, room_id: str, request_id: str, approve: bool, reason: str | None, defer: bool) -> Room:
+        with self.lock:
+            data = self._read()
+            room = self._room(data, room_id)
+            request = next((r for r in room.floor_requests if r.id == request_id), None)
+            if request is None:
+                raise ValueError(f"floor request not found: {request_id}")
+            if approve and request.agent_id not in room.floor_grants:
+                room.floor_grants.append(request.agent_id)
+            if defer:
+                request.status = "deferred"
+                request.reason = reason
+            else:
+                room.floor_requests.remove(request)
+            data["rooms"][room_id] = room.model_dump()
+            self._write(data)
+            return room
 
     def list_messages(self, room_id: str, after_id: int | None) -> list[Message]:
         with self.lock:
@@ -371,7 +437,9 @@ class Store:
     def _room(self, data: dict[str, Any], room_id: str) -> Room:
         if room_id not in data["rooms"]:
             raise KeyError(f"room not found: {room_id}")
-        return Room.model_validate(data["rooms"][room_id])
+        room = Room.model_validate(data["rooms"][room_id])
+        room.floor_grants = list(dict.fromkeys(room.floor_grants))
+        return room
 
     def _read(self) -> dict[str, Any]:
         return self._normalize(json.loads(self.path.read_text(encoding="utf-8")))
@@ -414,6 +482,9 @@ class Store:
                 room["planned_template_ids"] = []
             if "agent_posting_closed" not in room:
                 room["agent_posting_closed"] = False
+            if "floor_grants" not in room:
+                room["floor_grants"] = []
+                room["floor_requests"] = []
             if "muted_agent_ids" not in room:
                 room["muted_agent_ids"] = []
             if "meeting_status" not in room:
@@ -457,6 +528,8 @@ class Store:
             planned_template_ids=[],
             agent_posting_closed=False,
             muted_agent_ids=[],
+            floor_grants=[],
+            floor_requests=[],
             state=state,
             created_at=now_iso(),
             meeting_status=meeting_status(self._room_state_label(state), goal, "", "", None),

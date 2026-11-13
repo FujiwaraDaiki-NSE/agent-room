@@ -9,6 +9,10 @@ from fastapi.staticfiles import StaticFiles
 
 from .models import (
     AgentGoalRequest,
+    AssignRequest,
+    RequestFloorRequest,
+    ApproveFloorRequest,
+    DeclineFloorRequest,
     CreateRoomRequest,
     DeployAgentRequest,
     MarkDoneRequest,
@@ -162,7 +166,6 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
     @app.post("/api/rooms/{room_id}/messages")
     async def post_message(room_id: str, request: PostMessageRequest) -> dict[str, Any]:
         try:
-            _assert_can_post(room_id, request)
             message = store.add_message(
                 room_id,
                 request.actor_type,
@@ -171,7 +174,7 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
                 request.text,
                 request.kind,
             )
-            await hub.broadcast(room_id, {"type": "message.created", "message": message.model_dump()})
+            await hub.broadcast(room_id, {"type": "message.created", "message": message.model_dump(), "room": store.get_room(room_id).model_dump()})
             return message.model_dump()
         except (ValueError, KeyError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -209,6 +212,65 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
                     {"type": "controller.message.created", "controller_message": extra_message.model_dump()},
                 )
             return message.model_dump()
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/assign")
+    async def assign_agents(room_id: str, request: AssignRequest) -> dict[str, Any]:
+        try:
+            _require_controller_agent(room_id, request.actor_id)
+            if not request.question.strip() or len(set(request.agent_ids)) != len(request.agent_ids):
+                raise ValueError("question is required and agent_ids must be unique")
+            room = store.get_room(room_id)
+            for agent_id in request.agent_ids:
+                _require_regular_agent(room_id, agent_id)
+            messages = store.list_messages(room_id, None)
+            for agent_id in request.agent_ids:
+                agent = next(a for a in room.agents if a.id == agent_id)
+                last_id = max((m.id for m in messages if m.actor_id == agent_id), default=0)
+                original = "\n\n".join(f"#{m.id} {m.actor_name} ({m.actor_id})\n{m.text}" for m in messages if m.id > last_id)
+                tmux.send_floor_notice(agent, f"指名: {request.question}\n1回分の発言権があります。\n前回投稿以降のpublic発言（原文）:\n{original}")
+            room = store.grant_floor(room_id, request.agent_ids)
+            await hub.broadcast(room_id, {"type": "floor.updated", "room": room.model_dump()})
+            return room.model_dump()
+        except (ValueError, KeyError, TmuxError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/floor/requests")
+    async def request_floor(room_id: str, request: RequestFloorRequest) -> dict[str, Any]:
+        try:
+            _require_regular_agent(room_id, request.actor_id)
+            room = store.request_floor(room_id, request.actor_id, request.kind, request.target, request.summary)
+            await hub.broadcast(room_id, {"type": "floor.updated", "room": room.model_dump()})
+            return room.model_dump()
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/floor/requests/{request_id}/approve")
+    async def approve_floor(room_id: str, request_id: str, request: ApproveFloorRequest) -> dict[str, Any]:
+        try:
+            _require_controller_agent(room_id, request.actor_id)
+            room = store.get_room(room_id)
+            entry = next((r for r in room.floor_requests if r.id == request_id), None)
+            if entry is None:
+                raise ValueError(f"floor request not found: {request_id}")
+            agent = next(a for a in room.agents if a.id == entry.agent_id)
+            tmux.send_floor_notice(agent, f"挙手承認: {request_id}\n{entry.summary}\n1回分の発言権があります。room_readで原文を確認して投稿してください。")
+            room = store.resolve_floor(room_id, request_id, True, None, False)
+            await hub.broadcast(room_id, {"type": "floor.updated", "room": room.model_dump()})
+            return room.model_dump()
+        except (ValueError, KeyError, TmuxError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/rooms/{room_id}/floor/requests/{request_id}/decline")
+    async def decline_floor(room_id: str, request_id: str, request: DeclineFloorRequest) -> dict[str, Any]:
+        try:
+            _require_controller_agent(room_id, request.actor_id)
+            if not request.reason.strip():
+                raise ValueError("reason is required")
+            room = store.resolve_floor(room_id, request_id, False, request.reason, request.defer)
+            await hub.broadcast(room_id, {"type": "floor.updated", "room": room.model_dump()})
+            return room.model_dump()
         except (ValueError, KeyError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -504,15 +566,6 @@ def create_app(project_root: Path, data_dir: Path, codex_auth_file: Path) -> Fas
                 actor_id,
                 "agent.stopped",
             )
-
-    def _assert_can_post(room_id: str, request: PostMessageRequest) -> None:
-        if request.actor_type != "agent":
-            return
-        room = store.get_room(room_id)
-        if request.actor_id in room.muted_agent_ids:
-            raise ValueError(f"agent is muted: {request.actor_id}")
-        if room.agent_posting_closed:
-            raise ValueError("room discussion is closed; wait for controller")
 
     def _require_regular_agent(room_id: str, agent_id: str) -> None:
         room = store.get_room(room_id)

@@ -457,6 +457,12 @@ function renderRoom() {
   renderShareContexts();
   renderAgents(room ? room.agents : []);
   renderMeetingStatus(room);
+  const requests = room ? room.floor_requests : [];
+  $("floorCount").textContent = `未処理の挙手 ${requests.length}件（保留含む）`;
+  renderStatusList("floorQueue", requests.map(request => {
+    const agent = room.agents.find(item => item.id === request.agent_id);
+    return `${agent ? agent.name : request.agent_id} → ${request.target} · ${request.kind} · ${request.summary} · ${request.status === "deferred" ? "保留: " + request.reason : "承認待ち"} [${request.id}]`;
+  }), "挙手なし");
   renderProgressStrip(room);
   renderRoster(room ? room.agents : []);
   renderMessageList("messages", state.messages, "発言なし", false);

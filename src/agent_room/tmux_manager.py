@@ -132,6 +132,11 @@ class TmuxManager:
         )
         self._send_codex_prompt(agent.pane_id, text)
 
+    def send_floor_notice(self, agent: AgentInstance, text: str) -> None:
+        if not agent.pane_id:
+            raise TmuxError(f"agent has no tmux pane: {agent.id}")
+        self._send_codex_prompt(agent.pane_id, text)
+
     def send_controller_whisper(self, agent: AgentInstance, text: str) -> None:
         if not agent.pane_id:
             raise TmuxError(f"controller has no tmux pane: {agent.id}")
@@ -199,6 +204,7 @@ class TmuxManager:
             *self._planned_participant_lines(room, template.scope == "controller"),
             "MCP tools:",
             "- room_read: read public room messages",
+            "- room_state: read floor grants and the pending/deferred hand queue",
             "- room_post: post a public room message",
             "- room_done: mark yourself done",
             "- share_contexts: list selected shared context names",
@@ -239,6 +245,7 @@ class TmuxManager:
                     "Use room_close_discussion before the final public report, then use room_finish after the outcome is complete.",
                     "Do not use room_done to finish the room; it only marks your controller agent done.",
                     "Use controller tools for user-side whispers and lifecycle operations.",
+                    "Assign turns with agent_assign; review pending and deferred floor_requests in room state. Opening discussion alone grants no floor.",
                 ]
             )
         else:
@@ -247,7 +254,9 @@ class TmuxManager:
                     "",
                     "Start discipline:",
                     "- Do not post before the controller's first public facilitation message.",
-                    "- Speak only when the controller names you, requests all agents, or assigns your current temporary viewpoint.",
+                    "- Post only with a one-use floor from agent_assign, floor_approve, or a public named reply to you. General calls do not grant a floor.",
+                    "- To speak without a floor, use floor_request(kind, target, summary); kind is 質問/反論/補足. Wait for approval.",
+                    "- 要約が自分の意図とずれていたら、意図確認で指名された時に訂正する。",
                     "- If room_post is rejected because the discussion is closed, read the room again later and wait for the controller.",
                 ]
             )
