@@ -30,7 +30,7 @@ def test_link_shared_auth(tmp_path) -> None:
     assert linked.resolve() == auth_file
 
 
-def test_copy_share_contexts_copies_selected_directories(tmp_path) -> None:
+def test_link_share_contexts_references_selected_directories(tmp_path) -> None:
     project_root = tmp_path / "project"
     source = project_root / "share" / "alpha"
     source.mkdir(parents=True)
@@ -47,15 +47,18 @@ def test_copy_share_contexts_copies_selected_directories(tmp_path) -> None:
     runtime_dir.mkdir(parents=True)
     manager = TmuxManager(project_root, tmp_path, auth_file)
 
-    manager._copy_share_contexts(runtime_dir, ["alpha"])
+    manager._link_share_contexts(runtime_dir, ["alpha"])
 
     copied = runtime_dir / "share" / "alpha"
     assert copied.is_dir()
-    assert not copied.is_symlink()
+    assert copied.is_symlink()
+    assert copied.resolve() == source
     assert (copied / "README.md").read_text(encoding="utf-8") == "Alpha context\n"
     assert (copied / "src" / "main.py").is_file()
-    assert not (copied / "node_modules").exists()
-    assert not (copied / ".venv").exists()
+    assert (copied / "node_modules").exists()
+    assert (copied / ".venv").exists()
+    (source / "README.md").write_text("Updated\n", encoding="utf-8")
+    assert (copied / "README.md").read_text(encoding="utf-8") == "Updated\n"
 
 
 def test_trust_project_adds_runtime_trust_once(tmp_path) -> None:
@@ -286,11 +289,11 @@ def test_goal_prompt_splits_controller_and_agent_termination(tmp_path, monkeypat
     assert "Controller Termination:\nController done" in controller_prompt
     assert "Agent Termination:\nAgents done" in controller_prompt
     assert "./share/alpha" in controller_prompt
-    assert "copied runtime snapshots" in controller_prompt
+    assert "symbolic links to shared sources" in controller_prompt
     assert "Controller Termination:" not in agent_prompt
     assert "Agent Termination:\nAgents done" in agent_prompt
     assert "./share/alpha" in agent_prompt
-    assert "copied runtime snapshots" in agent_prompt
+    assert "symbolic links to shared sources" in agent_prompt
     assert "Agent Room MCP tools" in controller_prompt
     assert "share_contexts" in controller_prompt
     assert "share_list" in controller_prompt
